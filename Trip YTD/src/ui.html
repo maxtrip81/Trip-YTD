@@ -1,0 +1,654 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trip YTD</title>
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<style>
+  :root {
+    --bg: #f6f5f9;
+    --glow: rgba(124, 58, 237, .10);
+    --surface: #ffffff;
+    --surface-2: #f2f0f7;
+    --border: #e3e0eb;
+    --text: #1b1a22;
+    --muted: #6b6878;
+    --accent: #7c3aed;
+    --accent-2: #db2777;
+    --accent-soft: rgba(124, 58, 237, .08);
+    --on-accent: #ffffff;
+    --ok: #15803d;
+    --err: #b91c1c;
+    --err-soft: rgba(185, 28, 28, .07);
+    --track: #ebe8f2;
+    --shadow: 0 1px 2px rgba(20, 16, 40, .04), 0 8px 24px rgba(20, 16, 40, .06);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e0d13;
+      --glow: rgba(139, 92, 246, .16);
+      --surface: #17161f;
+      --surface-2: #1f1d29;
+      --border: #2b2938;
+      --text: #f2f0f7;
+      --muted: #9b97aa;
+      --accent: #8b5cf6;
+      --accent-2: #ec4899;
+      --accent-soft: rgba(139, 92, 246, .14);
+      --ok: #4ade80;
+      --err: #f87171;
+      --err-soft: rgba(248, 113, 113, .09);
+      --track: #272534;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 30px rgba(0, 0, 0, .25);
+      color-scheme: dark;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    min-height: 100vh;
+    background: radial-gradient(900px 420px at 50% -120px, var(--glow), transparent 70%), var(--bg);
+    color: var(--text);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  button, input { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  button:disabled { cursor: default; opacity: .5; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .wrap { max-width: 660px; margin: 0 auto; padding: 48px 16px 40px; }
+
+  .brand { display: flex; align-items: center; gap: 14px; margin-bottom: 28px; }
+  .brand img { width: 52px; height: 52px; display: block; margin: -4px; }
+  .brand h1 { margin: 0; font-size: 26px; line-height: 1.15; font-weight: 700; letter-spacing: -.02em; }
+  .brand p { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 22px;
+    box-shadow: var(--shadow);
+  }
+  .card + .card, .card + #jobs { margin-top: 16px; }
+
+  .label { display: block; font-size: 13px; font-weight: 600; color: var(--muted); margin-bottom: 8px; }
+
+  .field { position: relative; }
+  .field input {
+    width: 100%;
+    height: 54px;
+    padding: 0 104px 0 16px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-2);
+    font-size: 16px;
+    transition: border-color .15s, background .15s;
+  }
+  .field input::placeholder { color: var(--muted); opacity: .8; }
+  .field input:focus { outline: none; border-color: var(--accent); background: var(--surface); }
+  .field.invalid input { border-color: var(--err); }
+  .paste {
+    position: absolute; right: 8px; top: 8px; height: 38px;
+    padding: 0 14px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+    font-size: 13px; font-weight: 600;
+  }
+  .paste:hover { border-color: var(--accent); color: var(--accent); }
+
+  .hint { min-height: 20px; margin: 8px 2px 0; font-size: 13px; color: var(--muted); }
+  .hint.ok { color: var(--ok); }
+  .hint.err { color: var(--err); }
+
+  .formats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0 18px; border: 0; padding: 0; }
+  .formats legend { padding: 0; }
+  .fmt { position: relative; display: block; }
+  .fmt input { position: absolute; opacity: 0; pointer-events: none; }
+  .fmt span {
+    display: flex; flex-direction: column; gap: 2px;
+    padding: 14px 16px;
+    border: 1.5px solid var(--border);
+    border-radius: 14px;
+    cursor: pointer;
+    transition: border-color .15s, background .15s;
+  }
+  .fmt strong { font-size: 17px; letter-spacing: -.01em; }
+  .fmt small { color: var(--muted); font-size: 13px; }
+  .fmt span:hover { border-color: var(--muted); }
+  .fmt input:checked + span { border-color: var(--accent); background: var(--accent-soft); }
+  .fmt input:checked + span strong { color: var(--accent); }
+  .fmt input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .primary {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    width: 100%; height: 54px;
+    border: 0; border-radius: 14px;
+    background: linear-gradient(100deg, var(--accent), var(--accent-2));
+    color: var(--on-accent);
+    font-size: 16px; font-weight: 650;
+    transition: transform .1s, filter .15s;
+  }
+  .primary:hover:not(:disabled) { filter: brightness(1.08); }
+  .primary:active:not(:disabled) { transform: scale(.99); }
+  .primary svg { width: 20px; height: 20px; }
+
+  /* configurazione iniziale */
+  .setup h2 { margin: 0 0 6px; font-size: 18px; }
+  .setup > p { margin: 0 0 16px; color: var(--muted); font-size: 14px; }
+  .comps { list-style: none; margin: 0 0 18px; padding: 0; display: grid; gap: 12px; }
+  .comp { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; align-items: baseline; }
+  .comp b { font-weight: 600; }
+  .comp em { font-style: normal; color: var(--muted); font-size: 13px; }
+  .comp .st { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .comp .st.ok { color: var(--ok); }
+  .comp .bar { grid-column: 1 / -1; margin-top: 4px; }
+  .error-box {
+    margin: 0 0 16px; padding: 12px 14px;
+    border-radius: 12px;
+    background: var(--err-soft); color: var(--err);
+    font-size: 14px;
+  }
+
+  /* barre di avanzamento */
+  .bar { height: 5px; border-radius: 99px; background: var(--track); overflow: hidden; }
+  .bar i {
+    display: block; height: 100%; width: 0;
+    border-radius: inherit;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    transition: width .35s ease;
+  }
+  .bar.indeterminate i { width: 35% !important; animation: slide 1.1s ease-in-out infinite; }
+  .bar.done i { background: var(--ok); }
+  .bar.failed i { background: var(--err); }
+  @keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(290%); } }
+  @media (prefers-reduced-motion: reduce) {
+    .bar.indeterminate i { animation: none; width: 100% !important; opacity: .5; }
+  }
+
+  /* download */
+  #jobs { display: grid; gap: 12px; }
+  #jobs:empty { display: none; }
+  .job {
+    display: grid; grid-template-columns: 112px 1fr; gap: 14px;
+    padding: 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    box-shadow: var(--shadow);
+  }
+  .thumb {
+    width: 112px; aspect-ratio: 16 / 9;
+    border-radius: 10px;
+    background: var(--surface-2) center / cover no-repeat;
+  }
+  .job-main { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+  .job-head { display: flex; align-items: flex-start; gap: 8px; }
+  .job-title {
+    flex: 1; margin: 0;
+    font-size: 15px; font-weight: 600; line-height: 1.35;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    word-break: break-word;
+  }
+  .badge {
+    flex: none;
+    padding: 2px 8px;
+    border-radius: 99px;
+    background: var(--accent-soft); color: var(--accent);
+    font-size: 12px; font-weight: 650; white-space: nowrap;
+  }
+  .job-meta { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .job-meta.ok { color: var(--ok); }
+  .job-meta.err { color: var(--err); }
+  .job-meta details { margin-top: 4px; color: var(--muted); }
+  .job-meta summary { cursor: pointer; font-size: 12px; }
+  .job-meta code { font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .job-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .job-actions:empty { display: none; }
+  .btn {
+    height: 32px; padding: 0 12px;
+    border: 1px solid var(--border); border-radius: 9px;
+    background: var(--surface-2);
+    font-size: 13px; font-weight: 600;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn.quiet { background: transparent; color: var(--muted); }
+
+  footer {
+    display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 20px;
+    margin-top: 28px; padding: 0 4px;
+    font-size: 13px; color: var(--muted);
+  }
+  footer .path { color: var(--text); overflow-wrap: anywhere; }
+  .link { border: 0; background: none; padding: 0; color: var(--accent); font-weight: 600; }
+  .link:hover { text-decoration: underline; }
+  .note { margin: 18px 4px 0; font-size: 12px; color: var(--muted); }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+    max-width: calc(100% - 32px);
+    padding: 10px 16px; border-radius: 12px;
+    background: var(--text); color: var(--bg);
+    font-size: 14px; box-shadow: var(--shadow);
+  }
+
+  .offline {
+    position: fixed; inset: 0;
+    display: grid; place-items: center; padding: 16px;
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    text-align: center;
+  }
+  .offline div { max-width: 360px; }
+  .offline h2 { margin: 0 0 6px; font-size: 18px; }
+  .offline p { margin: 0; color: var(--muted); }
+
+  [hidden] { display: none !important; }
+
+  @media (max-width: 520px) {
+    .wrap { padding-top: 28px; }
+    .job { grid-template-columns: 1fr; }
+    .thumb { width: 100%; }
+  }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <header class="brand">
+    <img src="/icon.svg" alt="">
+    <div>
+      <h1>Trip YTD</h1>
+      <p>Dal link YouTube a MP3 320k o WAV, in un clic.</p>
+    </div>
+  </header>
+
+  <section class="card setup" id="setup" hidden>
+    <h2>Prima configurazione</h2>
+    <p>Trip YTD usa alcuni strumenti open source per scaricare e convertire l'audio. Si installano una volta sola (<span id="setupSize"></span>) in <span id="setupLoc"></span>.</p>
+    <ul class="comps" id="comps"></ul>
+    <div class="error-box" id="setupError" hidden></div>
+    <button class="primary" id="install" type="button">Installa componenti</button>
+  </section>
+
+  <form class="card" id="composer" autocomplete="off">
+    <label class="label" for="url">Link YouTube</label>
+    <div class="field" id="field">
+      <input id="url" name="url" type="text" inputmode="url" spellcheck="false"
+             placeholder="https://www.youtube.com/watch?v=…" aria-describedby="hint">
+      <button class="paste" id="paste" type="button">Incolla</button>
+    </div>
+    <p class="hint" id="hint" aria-live="polite"></p>
+
+    <fieldset class="formats">
+      <legend class="label">Formato</legend>
+      <label class="fmt"><input type="radio" name="fmt" value="mp3" checked><span><strong>MP3</strong><small>320 kbps · 44,1 kHz</small></span></label>
+      <label class="fmt"><input type="radio" name="fmt" value="wav"><span><strong>WAV</strong><small>16 bit · 44,1 kHz</small></span></label>
+    </fieldset>
+
+    <button class="primary" id="go" type="submit">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/></svg>
+      Scarica
+    </button>
+  </form>
+
+  <section id="jobs" aria-live="polite"></section>
+
+  <footer>
+    <div>Salva in <span class="path" id="outdir">…</span> · <button class="link" id="openDir" type="button">Apri</button> · <button class="link" id="changeDir" type="button">Cambia</button></div>
+    <div>Motore <span id="engineVer">…</span> · <button class="link" id="update" type="button">Aggiorna</button></div>
+  </footer>
+  <p class="note">Usa Trip YTD solo per audio che hai il diritto di scaricare.</p>
+</main>
+
+<div class="toast" id="toast" role="status" hidden></div>
+<div class="offline" id="offline" hidden>
+  <div>
+    <h2>Trip YTD è chiuso</h2>
+    <p>Riapri l'app Trip YTD per continuare. Questa pagina si ricollega da sola.</p>
+  </div>
+</div>
+
+<script>
+(() => {
+  const $ = (s) => document.querySelector(s);
+  const ACTIVE = ['starting', 'downloading', 'converting'];
+  const urlInput = $('#url');
+  let state = null;
+  let offline = false;
+  let pollTimer = null;
+  let toastTimer = null;
+  let awaitingUpdate = false;
+  const isWindows = () => (state ? state.platform === 'windows' : /Win/.test(navigator.platform));
+
+  // --- API -----------------------------------------------------------------
+  async function api(path, body) {
+    const res = await fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Trip-YTD': '1' },
+      body: JSON.stringify(body || {}),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Errore imprevisto.');
+    return data;
+  }
+
+  async function refresh() {
+    try {
+      const res = await fetch('/api/state', { cache: 'no-store' });
+      if (!res.ok) throw new Error();
+      state = await res.json();
+      setOffline(false);
+      render();
+    } catch {
+      setOffline(true);
+    }
+    schedule();
+  }
+
+  function schedule() {
+    clearTimeout(pollTimer);
+    const busy = state && (state.setup.running || state.engine.updating ||
+      state.jobs.some((j) => ACTIVE.includes(j.status)));
+    pollTimer = setTimeout(refresh, offline ? 3000 : busy ? 600 : 4000);
+  }
+
+  function setOffline(v) {
+    offline = v;
+    $('#offline').hidden = !v;
+  }
+
+  // --- Link ----------------------------------------------------------------
+  function videoId(text) {
+    let s = (text || '').trim();
+    if (!s) return null;
+    if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(s)) s = 'https://' + s;
+    let u;
+    try { u = new URL(s); } catch { return null; }
+    const host = u.hostname.toLowerCase();
+    let vid = null;
+    if (host === 'youtu.be' || host === 'www.youtu.be') {
+      vid = u.pathname.replace(/^\/+/, '').split('/')[0];
+    } else if (/(^|\.)youtube(-nocookie)?\.com$/.test(host)) {
+      if (u.pathname.replace(/\/+$/, '') === '/watch') vid = u.searchParams.get('v');
+      else {
+        const m = u.pathname.match(/^\/(?:shorts|live|embed|v)\/([^/?#]+)/);
+        vid = m && m[1];
+      }
+    }
+    return vid && /^[A-Za-z0-9_-]{11}$/.test(vid) ? vid : null;
+  }
+
+  function setHint(text, kind) {
+    const h = $('#hint');
+    h.textContent = text || '';
+    h.className = 'hint' + (kind ? ' ' + kind : '');
+    $('#field').classList.toggle('invalid', kind === 'err');
+  }
+
+  function checkInput() {
+    const v = urlInput.value.trim();
+    if (!v) return setHint('');
+    if (videoId(v)) setHint('✓ Video riconosciuto', 'ok');
+    else if (v.length > 12) setHint('Link non riconosciuto: serve il link di un singolo video YouTube.', 'err');
+    else setHint('');
+  }
+
+  // --- Formato -------------------------------------------------------------
+  function selectedFormat() {
+    return document.querySelector('input[name="fmt"]:checked').value;
+  }
+  try {
+    const saved = localStorage.getItem('tripytd.format');
+    const el = saved && document.querySelector(`input[name="fmt"][value="${saved}"]`);
+    if (el) el.checked = true;
+  } catch {}
+  document.querySelectorAll('input[name="fmt"]').forEach((el) =>
+    el.addEventListener('change', () => { try { localStorage.setItem('tripytd.format', el.value); } catch {} }));
+
+  // --- Render --------------------------------------------------------------
+  function render() {
+    renderSetup(state.setup);
+    const ready = state.setup.installed && !state.setup.running;
+    $('#go').disabled = !ready;
+    $('#outdir').textContent = state.outdir;
+    $('#engineVer').textContent = state.engine.updating ? 'in aggiornamento…' :
+      (state.engine.version ? 'yt-dlp ' + state.engine.version : (ready ? 'yt-dlp' : 'non installato'));
+    $('#update').disabled = !ready || state.engine.updating;
+    if (awaitingUpdate && !state.engine.updating && state.engine.message) {
+      awaitingUpdate = false;
+      toast(state.engine.message);
+    }
+    renderJobs(state.jobs);
+  }
+
+  function renderSetup(s) {
+    const show = !s.installed || s.running;
+    $('#setup').hidden = !show;
+    if (!show) return;
+    $('#setupLoc').textContent = s.location;
+    $('#setupSize').textContent = s.size;
+    const comps = $('#comps');
+    comps.replaceChildren(...s.components.map((c) => {
+      const li = document.createElement('li');
+      li.className = 'comp';
+      const name = document.createElement('div');
+      name.innerHTML = '<b></b> <em></em>';
+      name.querySelector('b').textContent = c.label;
+      name.querySelector('em').textContent = '· ' + c.desc;
+      const st = document.createElement('span');
+      st.className = 'st';
+      const bar = document.createElement('div');
+      bar.className = 'bar';
+      bar.innerHTML = '<i></i>';
+      if (c.installed) {
+        st.textContent = 'Installato ✓'; st.classList.add('ok');
+        bar.classList.add('done'); bar.firstChild.style.width = '100%';
+      } else if (s.running && c.progress > 0) {
+        st.textContent = Math.round(c.progress * 100) + '%';
+        bar.firstChild.style.width = (c.progress * 100) + '%';
+      } else {
+        st.textContent = s.running ? 'In attesa' : 'Da installare';
+      }
+      li.append(name, st, bar);
+      return li;
+    }));
+    const err = $('#setupError');
+    err.hidden = !s.error;
+    err.textContent = s.error || '';
+    const btn = $('#install');
+    btn.disabled = s.running;
+    btn.textContent = s.running ? 'Installazione in corso…' : (s.error ? 'Riprova' : 'Installa componenti');
+    urlInput.disabled = !s.installed;
+  }
+
+  const jobEls = new Map();
+
+  function renderJobs(jobs) {
+    const list = $('#jobs');
+    const ids = new Set(jobs.map((j) => j.id));
+    for (const [id, el] of jobEls) if (!ids.has(id)) { el.remove(); jobEls.delete(id); }
+    jobs.forEach((job, i) => {
+      let el = jobEls.get(job.id);
+      if (!el) { el = createJobEl(job); jobEls.set(job.id, el); }
+      if (list.children[i] !== el) list.insertBefore(el, list.children[i] || null);
+      updateJobEl(el, job);
+    });
+  }
+
+  function createJobEl(job) {
+    const el = document.createElement('article');
+    el.className = 'job';
+    el.innerHTML = `
+      <div class="thumb"></div>
+      <div class="job-main">
+        <div class="job-head"><h3 class="job-title"></h3><span class="badge"></span></div>
+        <div class="bar"><i></i></div>
+        <div class="job-meta"></div>
+        <div class="job-actions"></div>
+      </div>`;
+    el.querySelector('.thumb').style.backgroundImage = `url("https://i.ytimg.com/vi/${job.vid}/mqdefault.jpg")`;
+    el.querySelector('.badge').textContent = job.format_label;
+    el.dataset.status = '';
+    return el;
+  }
+
+  function fmtSize(bytes) {
+    if (!bytes) return '';
+    const mb = bytes / 1048576;
+    return mb.toLocaleString('it-IT', { maximumFractionDigits: mb < 10 ? 1 : 0 }) + ' MB';
+  }
+
+  function fmtEta(eta) {
+    if (!eta) return '';
+    return eta.replace(/^00:/, '').replace(/^0(\d:)/, '$1') + ' rimanenti';
+  }
+
+  function updateJobEl(el, job) {
+    el.querySelector('.job-title').textContent = job.title || 'youtu.be/' + job.vid;
+    el.querySelector('.job-title').title = job.title || job.url;
+
+    const bar = el.querySelector('.bar');
+    const fill = bar.firstElementChild;
+    bar.className = 'bar';
+    if (job.status === 'starting' || job.status === 'converting') bar.classList.add('indeterminate');
+    else if (job.status === 'done') bar.classList.add('done');
+    else if (job.status === 'error' || job.status === 'cancelled') bar.classList.add('failed');
+    fill.style.width = (job.status === 'done' ? 100 : job.percent) + '%';
+    bar.hidden = job.status === 'cancelled';
+
+    const meta = el.querySelector('.job-meta');
+    meta.className = 'job-meta';
+    if (job.status === 'starting') {
+      meta.textContent = 'Recupero informazioni dal link…';
+    } else if (job.status === 'downloading') {
+      const pct = job.percent.toLocaleString('it-IT', { maximumFractionDigits: 0 }) + '%';
+      meta.textContent = ['Download ' + pct, job.speed, fmtEta(job.eta)].filter(Boolean).join(' · ');
+    } else if (job.status === 'converting') {
+      meta.textContent = job.format === 'mp3' ? 'Conversione in MP3 320 kbps…' : 'Conversione in WAV…';
+    } else if (job.status === 'done') {
+      meta.classList.add('ok');
+      meta.textContent = ['Salvato', job.filename, fmtSize(job.size)].filter(Boolean).join(' · ');
+    } else if (job.status === 'cancelled') {
+      meta.textContent = 'Download annullato.';
+    } else if (job.status === 'error' && el.dataset.status !== 'error') {
+      meta.classList.add('err');
+      meta.textContent = job.error;
+      if (job.detail && job.detail !== job.error) {
+        const d = document.createElement('details');
+        d.innerHTML = '<summary>Dettagli</summary><code></code>';
+        d.querySelector('code').textContent = job.detail;
+        meta.append(d);
+      }
+    } else if (job.status === 'error') {
+      meta.classList.add('err');
+    }
+
+    if (el.dataset.status !== job.status) {
+      el.dataset.status = job.status;
+      const actions = el.querySelector('.job-actions');
+      const btn = (label, fn, quiet) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'btn' + (quiet ? ' quiet' : '');
+        b.textContent = label;
+        b.addEventListener('click', () => fn().catch((e) => toast(e.message)));
+        return b;
+      };
+      const act = (a) => () => api(`/api/jobs/${job.id}/${a}`).then(refresh);
+      const retry = () => api('/api/jobs', { url: job.url, format: job.format })
+        .then(() => api(`/api/jobs/${job.id}/dismiss`)).then(refresh);
+      const items = [];
+      if (ACTIVE.includes(job.status)) items.push(btn('Annulla', act('cancel'), true));
+      const revealLabel = isWindows() ? 'Mostra in Esplora file' : 'Mostra nel Finder';
+      if (job.status === 'done') items.push(btn(revealLabel, act('reveal')), btn('Ascolta', act('play')));
+      if (job.status === 'error' || job.status === 'cancelled') items.push(btn('Riprova', retry));
+      if (!ACTIVE.includes(job.status)) items.push(btn('Rimuovi', act('dismiss'), true));
+      actions.replaceChildren(...items);
+    }
+  }
+
+  // --- Azioni --------------------------------------------------------------
+  function toast(text) {
+    const t = $('#toast');
+    t.textContent = text;
+    t.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { t.hidden = true; }, 3500);
+  }
+
+  $('#composer').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const url = urlInput.value.trim();
+    if (!url) { setHint('Incolla prima un link YouTube.', 'err'); urlInput.focus(); return; }
+    const vid = videoId(url);
+    if (!vid) { setHint('Link non riconosciuto: serve il link di un singolo video YouTube.', 'err'); urlInput.focus(); return; }
+    const format = selectedFormat();
+    if (state && state.jobs.some((j) => j.vid === vid && j.format === format && ACTIVE.includes(j.status))) {
+      setHint('Questo video è già in download in questo formato.', 'err');
+      return;
+    }
+    const go = $('#go');
+    go.disabled = true;
+    try {
+      await api('/api/jobs', { url, format });
+      urlInput.value = '';
+      setHint('');
+      await refresh();
+    } catch (err) {
+      setHint(err.message, 'err');
+    } finally {
+      go.disabled = !(state && state.setup.installed);
+      urlInput.focus();
+    }
+  });
+
+  urlInput.addEventListener('input', checkInput);
+
+  $('#paste').addEventListener('click', async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      urlInput.value = text.trim();
+      checkInput();
+    } catch {
+      setHint(`Premi ${isWindows() ? 'Ctrl+V' : '⌘V'} per incollare il link.`, '');
+    }
+    urlInput.focus();
+  });
+
+  document.addEventListener('dragover', (e) => e.preventDefault());
+  document.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const text = e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain');
+    if (text) { urlInput.value = text.split('\n')[0].trim(); checkInput(); urlInput.focus(); }
+  });
+
+  $('#install').addEventListener('click', () => api('/api/setup').then(refresh).catch((e) => toast(e.message)));
+  $('#openDir').addEventListener('click', () => api('/api/outdir/open').catch((e) => toast(e.message)));
+  $('#changeDir').addEventListener('click', async () => {
+    try {
+      const r = await api('/api/outdir/choose');
+      if (r.ok) { $('#outdir').textContent = r.outdir; toast('I prossimi file andranno in ' + r.outdir); }
+    } catch (e) { toast(e.message); }
+  });
+
+  $('#update').addEventListener('click', async () => {
+    try {
+      await api('/api/update');
+      awaitingUpdate = true;
+      refresh();
+    } catch (e) { toast(e.message); }
+  });
+
+  window.addEventListener('pagehide', () => { try { navigator.sendBeacon('/api/bye'); } catch {} });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
+
+  refresh().then(() => urlInput.focus());
+})();
+</script>
+</body>
+</html>
