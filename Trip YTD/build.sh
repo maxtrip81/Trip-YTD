@@ -58,7 +58,7 @@ plist="$APP/Contents/Info.plist"
 pb() { /usr/libexec/PlistBuddy -c "$1" "$plist"; }
 pb "Set :CFBundleName Trip YTD"
 pb "Set :CFBundleIdentifier com.trip.ytd" 2>/dev/null || pb "Add :CFBundleIdentifier string com.trip.ytd"
-pb "Add :CFBundleShortVersionString string 1.1" 2>/dev/null || pb "Set :CFBundleShortVersionString 1.1"
+pb "Add :CFBundleShortVersionString string 1.2" 2>/dev/null || pb "Set :CFBundleShortVersionString 1.2"
 pb "Delete :CFBundleIconName" 2>/dev/null || true
 
 # la firma ad-hoc è necessaria su Apple Silicon dopo aver modificato il pacchetto

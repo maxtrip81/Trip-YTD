@@ -1,6 +1,7 @@
 # Trip YTD
 
-Incolla un link YouTube e scarica l'audio in **MP3 320 kbps** o **WAV 16 bit / 44,1 kHz**.
+Incolla un link YouTube e scarica l'audio in **MP3 320 kbps** o **WAV 16 bit / 44,1 kHz**,
+oppure il **video nella massima qualità disponibile** (fino a 4K/8K, 60 fps, HDR) in MP4.
 Funziona su **macOS** e **Windows 10/11 (64 bit)**.
 
 ## Pacchetti (cartella `dist/`)
@@ -22,10 +23,15 @@ Esegui comunque. Il primo avvio crea i collegamenti "Trip YTD" su Desktop e menu
 
 Poi, su entrambi:
 1. La prima volta premi **Installa componenti** (una volta sola).
-2. Incolla il link (o trascinalo sulla pagina), scegli MP3 o WAV e premi **Scarica**.
+2. Incolla il link (o trascinalo sulla pagina), scegli MP3, WAV o Video e premi **Scarica**.
 
 I file finiscono in `Download/Trip YTD` (si cambia con «Cambia» in fondo alla pagina).
 Quando chiudi la pagina, Trip YTD si chiude da solo.
+
+**Video.** Trip YTD sceglie la risoluzione più alta, poi gli fps più alti e l'HDR, e unisce
+il video all'audio migliore in un file MP4. Sopra il 1080p YouTube usa i codec VP9 o AV1,
+che QuickTime non riproduce: su Mac usa [VLC](https://www.videolan.org) o [IINA](https://iina.io).
+Su Windows li riproducono Lettore multimediale (con le estensioni VP9/AV1 di Microsoft) o VLC.
 
 ## Come funziona
 
@@ -37,7 +43,7 @@ Quando chiudi la pagina, Trip YTD si chiude da solo.
 |---|---|---|
 | yt-dlp | `yt-dlp_macos`, GitHub ufficiale, SHA-256 | `yt-dlp.exe`, GitHub ufficiale, SHA-256 |
 | Deno (runtime JS per YouTube) | GitHub ufficiale, SHA-256 | GitHub ufficiale, SHA-256 |
-| ffmpeg + ffprobe | evermeet.cx (linkato da ffmpeg.org), richiede Rosetta 2 | build del progetto yt-dlp, SHA-256 |
+| ffmpeg + ffprobe (conversione, unione audio/video) | evermeet.cx (linkato da ffmpeg.org), richiede Rosetta 2 | build del progetto yt-dlp, SHA-256 |
 | Spazio | circa 130 MB da scaricare, 270 MB su disco | circa 160 MB da scaricare, 300 MB su disco |
 
 - yt-dlp si aggiorna da solo ogni 2 giorni (o con «Aggiorna»).
@@ -50,4 +56,4 @@ Dopo aver modificato i file in `src/`, su un Mac esegui `./build.sh`: ricrea tut
 Per la versione Windows scarica (e verifica) Python 3.14 embeddable da python.org.
 Per provare senza app: `python3 src/trip_ytd.py`.
 
-Usa Trip YTD solo per audio che hai il diritto di scaricare.
+Usa Trip YTD solo per contenuti che hai il diritto di scaricare.

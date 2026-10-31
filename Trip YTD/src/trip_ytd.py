@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Trip YTD: incolla un link YouTube e scarica l'audio in MP3 320k o WAV.
+"""Trip YTD: incolla un link YouTube e scarica l'audio in MP3 320k o WAV,
+oppure il video nella massima qualità disponibile.
 
 Server locale (solo libreria standard di Python) con interfaccia nel browser,
 per macOS e Windows. Alla prima apertura scarica i componenti esterni
@@ -32,7 +33,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 APP_NAME = "Trip YTD"
-VERSION = "1.1"
+VERSION = "1.2"
 HOST = "127.0.0.1"
 PORT = 47320
 URL = "http://%s:%d/" % (HOST, PORT)
@@ -68,15 +69,28 @@ EVERMEET_INFO = "https://evermeet.cx/ffmpeg/info/%s/release"
 FFMPEG_WIN_RELEASE = "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/"
 FFMPEG_WIN_ZIP = "ffmpeg-master-latest-win64-gpl-shared.zip"
 
+AUDIO_ARGS = ["-f", "bestaudio/best", "-x", "--postprocessor-args", "ExtractAudio:-ar 44100"]
+COVER_ARGS = ["--embed-thumbnail", "--convert-thumbnails", "jpg"]
+
 FORMATS = {
     "mp3": {
         "label": "MP3 320k",
-        "args": ["--audio-format", "mp3", "--audio-quality", "320K",
-                 "--embed-thumbnail", "--convert-thumbnails", "jpg"],
+        "exts": ("mp3",),
+        "args": AUDIO_ARGS + ["--audio-format", "mp3", "--audio-quality", "320K"] + COVER_ARGS,
     },
     "wav": {
         "label": "WAV",
-        "args": ["--audio-format", "wav"],
+        "exts": ("wav",),
+        "args": AUDIO_ARGS + ["--audio-format", "wav"],
+    },
+    # Massima qualità: prima la risoluzione, poi fps e HDR. A parità di queste preferisce
+    # VP9 ad AV1, che molti computer non decodificano in hardware. Sempre in un file MP4.
+    "video": {
+        "label": "Video",
+        "video": True,
+        "exts": ("mp4", "mkv", "webm"),
+        "args": ["-f", "bv*+ba/b", "-S", "res,fps,hdr:12,vcodec:vp9",
+                 "--merge-output-format", "mp4", "--embed-chapters"] + COVER_ARGS,
     },
 }
 
@@ -88,7 +102,9 @@ FRIENDLY_ERRORS = [
     ("video unavailable", "Il video non è disponibile (rimosso o bloccato nel tuo Paese)."),
     ("video is unavailable", "Il video non esiste o non è più disponibile."),
     ("this live event will begin", "La diretta non è ancora iniziata."),
-    ("requested format is not available", "Nessuna traccia audio disponibile per questo video."),
+    ("requested format is not available", "Il formato richiesto non è disponibile per questo video."),
+    ("no space left", "Spazio su disco esaurito."),
+    ("postprocessing:", "ffmpeg non è riuscito a elaborare il file."),
     ("http error 403", "YouTube ha rifiutato il download. Prova con «Aggiorna» in fondo alla pagina."),
     ("bad cpu type", "ffmpeg richiede Rosetta 2. Nel Terminale esegui: softwareupdate --install-rosetta"),
     ("unable to download webpage", "Connessione a YouTube non riuscita. Controlla la rete."),
@@ -138,6 +154,26 @@ def friendly_error(raw):
         if needle in low:
             return msg
     return "Download non riuscito."
+
+
+def to_number(text):
+    try:
+        return float(text)
+    except (TypeError, ValueError):
+        return None
+
+
+def quality_label(width, height, fps, dynamic_range):
+    """Es. «1080p60», «4K HDR»: la risoluzione è il lato corto (vale anche per gli Shorts verticali)."""
+    side = min(width, height) if width and height else height
+    if not side:
+        return ""
+    label = "8K" if side >= 4320 else "4K" if side >= 2160 else "%dp" % side
+    if fps and fps > 30:
+        label += "%d" % round(fps)
+    if dynamic_range and dynamic_range not in ("SDR", "NA"):
+        label += " HDR"
+    return label
 
 
 def downloads_dir():
@@ -372,9 +408,9 @@ def mac_components():
          "install": install_ytdlp("yt-dlp_macos", "yt-dlp")},
         {"id": "deno", "label": "Deno", "desc": "runtime JavaScript richiesto da YouTube", "files": ["deno"],
          "install": install_deno(arch + "-apple-darwin")},
-        {"id": "ffmpeg", "label": "ffmpeg", "desc": "conversione in MP3 e WAV", "files": ["ffmpeg"],
+        {"id": "ffmpeg", "label": "ffmpeg", "desc": "conversione audio e unione audio/video", "files": ["ffmpeg"],
          "install": install_evermeet("ffmpeg")},
-        {"id": "ffprobe", "label": "ffprobe", "desc": "analisi dell'audio", "files": ["ffprobe"],
+        {"id": "ffprobe", "label": "ffprobe", "desc": "analisi dei file audio e video", "files": ["ffprobe"],
          "install": install_evermeet("ffprobe")},
     ]
 
@@ -385,7 +421,7 @@ def windows_components():
          "install": install_ytdlp("yt-dlp.exe", "yt-dlp.exe")},
         {"id": "deno", "label": "Deno", "desc": "runtime JavaScript richiesto da YouTube", "files": ["deno.exe"],
          "install": install_deno("x86_64-pc-windows-msvc")},
-        {"id": "ffmpeg", "label": "ffmpeg", "desc": "conversione e analisi dell'audio",
+        {"id": "ffmpeg", "label": "ffmpeg", "desc": "conversione audio e unione audio/video",
          "files": ["ffmpeg.exe", "ffprobe.exe"], "install": install_ffmpeg_windows},
     ]
 
@@ -441,9 +477,12 @@ def reveal_file(path):
         subprocess.Popen(["/usr/bin/open", "-R", path])
 
 
-def play_file(path):
+def play_file(path, video=False):
     if IS_WIN:
         os.startfile(path)
+    elif video:
+        # il lettore predefinito: QuickTime non riproduce VP9/AV1, VLC o IINA sì
+        subprocess.Popen(["/usr/bin/open", path])
     else:
         subprocess.Popen(["/usr/bin/open", "-a", "QuickTime Player", path])
 
@@ -485,7 +524,7 @@ def create_windows_shortcuts():
         "  $s.Arguments = %s\n"
         "  $s.WorkingDirectory = %s\n"
         "  $s.IconLocation = %s\n"
-        "  $s.Description = 'Audio da YouTube in MP3 320k o WAV'\n"
+        "  $s.Description = 'Audio e video da YouTube'\n"
         "  $s.Save()\n"
         "}\n"
     ) % (ps_str(pythonw), ps_str('"%s"' % (HERE / "trip_ytd.py")), ps_str(HERE.parent), ps_str(HERE / "icon.ico"))
@@ -513,6 +552,12 @@ class Job:
         self.speed = ""
         self.eta = ""
         self.title = ""
+        self.quality = ""
+        # un video arriva in due parti (video e audio) che yt-dlp scarica una dopo l'altra
+        self.parts = 1
+        self.parts_done = 0
+        self.bytes_done = 0
+        self.size_estimate = 0
         self.filepath = None
         self.size = 0
         self.error = None
@@ -532,7 +577,7 @@ class Job:
             "url": self.url,
             "vid": self.vid,
             "format": self.fmt,
-            "format_label": FORMATS[self.fmt]["label"],
+            "format_label": " ".join(filter(None, (FORMATS[self.fmt]["label"], self.quality))),
             "status": self.status,
             "percent": round(self.percent, 1),
             "speed": self.speed,
@@ -550,12 +595,13 @@ class Job:
             str(YTDLP), "--ignore-config", "--no-playlist", "--no-simulate",
             "--newline", "--progress",
             "--progress-template",
-            "download:TRIP_PROG %(progress.status)s|%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
+            "download:TRIP_PROG %(progress.status)s|%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s"
+            "|%(progress.downloaded_bytes)s|%(progress.total_bytes,progress.total_bytes_estimate)s",
             "--print", "video:TRIP_TITLE %(title)s",
+            "--print", "video:TRIP_INFO %(format_id)s|%(filesize,filesize_approx)s"
+                       "|%(width)s|%(height)s|%(fps)s|%(dynamic_range)s",
             "--print", "after_move:TRIP_FILE %(filepath)s",
             "--ffmpeg-location", str(BIN),
-            "-f", "bestaudio/best", "-x",
-            "--postprocessor-args", "ExtractAudio:-ar 44100",
             "--embed-metadata", "--no-mtime",
             "--windows-filenames", "--trim-filenames", "160",
             "-P", "home:" + str(self.outdir),
@@ -595,18 +641,36 @@ class Job:
     def _parse(self, line):
         self.lines.append(line)
         if line.startswith("TRIP_PROG "):
-            parts = (line[len("TRIP_PROG "):].split("|") + ["", "", "", ""])[:4]
-            status, pct, speed, eta = (p.strip() for p in parts)
-            try:
-                self.percent = float(pct.rstrip("%"))
-            except ValueError:
-                pass
+            parts = (line[len("TRIP_PROG "):].split("|") + [""] * 6)[:6]
+            status, pct, speed, eta, done, total = (p.strip() for p in parts)
+            pct = to_number(pct.rstrip("%"))
+            done, total = to_number(done) or 0, to_number(total) or 0
             self.speed = "" if speed in ("N/A", "NA", "Unknown", "Unknown B/s") else speed
             self.eta = "" if eta in ("N/A", "NA", "Unknown") else eta
             if status == "finished":
-                self.status, self.percent = "converting", 100.0
+                self.parts_done += 1
+                self.bytes_done += total or done
+                if self.parts_done >= self.parts:
+                    self.status, self.percent = "converting", 100.0
+                    return
+                pct, done, total = 0.0, 0, 0  # la parte finita è già in bytes_done
             elif not self.cancelled:
                 self.status = "downloading"
+            if self.parts == 1:
+                if pct is not None:
+                    self.percent = pct
+            elif self.size_estimate:
+                # avanzamento complessivo in byte: la parte video pesa quasi tutto
+                current = self.bytes_done + done
+                self.percent = min(99.0, 100.0 * current / max(self.size_estimate, self.bytes_done + total))
+            elif pct is not None:
+                self.percent = 100.0 * (self.parts_done + pct / 100) / self.parts
+        elif line.startswith("TRIP_INFO "):
+            fid, size, width, height, fps, hdr = (line[len("TRIP_INFO "):].split("|") + [""] * 6)[:6]
+            self.parts = max(1, len(fid.strip().split("+")))
+            self.size_estimate = to_number(size) or 0
+            if FORMATS[self.fmt].get("video"):
+                self.quality = quality_label(to_number(width), to_number(height), to_number(fps), hdr.strip())
         elif line.startswith("TRIP_TITLE "):
             self.title = line[len("TRIP_TITLE "):].strip()
         elif line.startswith("TRIP_FILE "):
@@ -636,7 +700,8 @@ class Job:
     def _find_output(self):
         # ripiego se il percorso stampato da yt-dlp non è leggibile
         try:
-            candidates = [p for p in self.outdir.glob("*." + self.fmt) if p.stat().st_mtime >= self.created - 2]
+            candidates = [p for ext in FORMATS[self.fmt]["exts"] for p in self.outdir.glob("*." + ext)
+                          if p.stat().st_mtime >= self.created - 2]
         except OSError:
             return None
         if not candidates:
@@ -968,7 +1033,10 @@ class Handler(BaseHTTPRequestHandler):
         elif action == "dismiss":
             app.dismiss(job.id)
         elif job.status == "done" and job.filepath and os.path.isfile(job.filepath):
-            (reveal_file if action == "reveal" else play_file)(job.filepath)
+            if action == "reveal":
+                reveal_file(job.filepath)
+            else:
+                play_file(job.filepath, video=FORMATS[job.fmt].get("video", False))
         else:
             return self._send(404, {"error": "Il file non esiste più."})
         return self._send(200, {"ok": True})
@@ -984,7 +1052,7 @@ def already_running():
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Trip YTD: audio da YouTube in MP3 320k o WAV.")
+    ap = argparse.ArgumentParser(description="Trip YTD: audio (MP3 320k, WAV) e video da YouTube.")
     ap.add_argument("--no-browser", action="store_true", help="non aprire il browser all'avvio")
     ap.add_argument("--out", help="cartella di destinazione per questa sessione")
     ap.add_argument("--shortcuts", action="store_true", help="Windows: crea i collegamenti su Desktop e menu Start")

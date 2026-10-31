@@ -106,12 +106,13 @@
   .hint.ok { color: var(--ok); }
   .hint.err { color: var(--err); }
 
-  .formats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0 18px; border: 0; padding: 0; }
+  .formats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 12px 0 18px; border: 0; padding: 0; }
   .formats legend { padding: 0; }
   .fmt { position: relative; display: block; }
   .fmt input { position: absolute; opacity: 0; pointer-events: none; }
   .fmt span {
     display: flex; flex-direction: column; gap: 2px;
+    height: 100%;
     padding: 14px 16px;
     border: 1.5px solid var(--border);
     border-radius: 14px;
@@ -254,6 +255,7 @@
     .wrap { padding-top: 28px; }
     .job { grid-template-columns: 1fr; }
     .thumb { width: 100%; }
+    .fmt span { padding: 12px; }
   }
 </style>
 </head>
@@ -263,13 +265,13 @@
     <img src="/icon.svg" alt="">
     <div>
       <h1>Trip YTD</h1>
-      <p>Dal link YouTube a MP3 320k o WAV, in un clic.</p>
+      <p>Dal link YouTube a MP3 320k, WAV o video in massima qualità.</p>
     </div>
   </header>
 
   <section class="card setup" id="setup" hidden>
     <h2>Prima configurazione</h2>
-    <p>Trip YTD usa alcuni strumenti open source per scaricare e convertire l'audio. Si installano una volta sola (<span id="setupSize"></span>) in <span id="setupLoc"></span>.</p>
+    <p>Trip YTD usa alcuni strumenti open source per scaricare e convertire audio e video. Si installano una volta sola (<span id="setupSize"></span>) in <span id="setupLoc"></span>.</p>
     <ul class="comps" id="comps"></ul>
     <div class="error-box" id="setupError" hidden></div>
     <button class="primary" id="install" type="button">Installa componenti</button>
@@ -288,6 +290,7 @@
       <legend class="label">Formato</legend>
       <label class="fmt"><input type="radio" name="fmt" value="mp3" checked><span><strong>MP3</strong><small>320 kbps · 44,1 kHz</small></span></label>
       <label class="fmt"><input type="radio" name="fmt" value="wav"><span><strong>WAV</strong><small>16 bit · 44,1 kHz</small></span></label>
+      <label class="fmt"><input type="radio" name="fmt" value="video"><span><strong>Video</strong><small>Massima qualità · MP4</small></span></label>
     </fieldset>
 
     <button class="primary" id="go" type="submit">
@@ -302,7 +305,7 @@
     <div>Salva in <span class="path" id="outdir">…</span> · <button class="link" id="openDir" type="button">Apri</button> · <button class="link" id="changeDir" type="button">Cambia</button></div>
     <div>Motore <span id="engineVer">…</span> · <button class="link" id="update" type="button">Aggiorna</button></div>
   </footer>
-  <p class="note">Usa Trip YTD solo per audio che hai il diritto di scaricare.</p>
+  <p class="note">Usa Trip YTD solo per contenuti che hai il diritto di scaricare.</p>
 </main>
 
 <div class="toast" id="toast" role="status" hidden></div>
@@ -492,7 +495,6 @@
         <div class="job-actions"></div>
       </div>`;
     el.querySelector('.thumb').style.backgroundImage = `url("https://i.ytimg.com/vi/${job.vid}/mqdefault.jpg")`;
-    el.querySelector('.badge').textContent = job.format_label;
     el.dataset.status = '';
     return el;
   }
@@ -511,6 +513,7 @@
   function updateJobEl(el, job) {
     el.querySelector('.job-title').textContent = job.title || 'youtu.be/' + job.vid;
     el.querySelector('.job-title').title = job.title || job.url;
+    el.querySelector('.badge').textContent = job.format_label;
 
     const bar = el.querySelector('.bar');
     const fill = bar.firstElementChild;
@@ -529,7 +532,8 @@
       const pct = job.percent.toLocaleString('it-IT', { maximumFractionDigits: 0 }) + '%';
       meta.textContent = ['Download ' + pct, job.speed, fmtEta(job.eta)].filter(Boolean).join(' · ');
     } else if (job.status === 'converting') {
-      meta.textContent = job.format === 'mp3' ? 'Conversione in MP3 320 kbps…' : 'Conversione in WAV…';
+      meta.textContent = { mp3: 'Conversione in MP3 320 kbps…', wav: 'Conversione in WAV…' }[job.format]
+        || 'Unione di video e audio…';
     } else if (job.status === 'done') {
       meta.classList.add('ok');
       meta.textContent = ['Salvato', job.filename, fmtSize(job.size)].filter(Boolean).join(' · ');
@@ -565,7 +569,7 @@
       const items = [];
       if (ACTIVE.includes(job.status)) items.push(btn('Annulla', act('cancel'), true));
       const revealLabel = isWindows() ? 'Mostra in Esplora file' : 'Mostra nel Finder';
-      if (job.status === 'done') items.push(btn(revealLabel, act('reveal')), btn('Ascolta', act('play')));
+      if (job.status === 'done') items.push(btn(revealLabel, act('reveal')), btn(job.format === 'video' ? 'Guarda' : 'Ascolta', act('play')));
       if (job.status === 'error' || job.status === 'cancelled') items.push(btn('Riprova', retry));
       if (!ACTIVE.includes(job.status)) items.push(btn('Rimuovi', act('dismiss'), true));
       actions.replaceChildren(...items);

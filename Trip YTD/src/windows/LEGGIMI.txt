@@ -1,7 +1,8 @@
 TRIP YTD per Windows
 ====================
 
-Incolla un link YouTube e scarica l'audio in MP3 320 kbps o WAV 16 bit / 44,1 kHz.
+Incolla un link YouTube e scarica l'audio in MP3 320 kbps o WAV 16 bit / 44,1 kHz,
+oppure il video nella massima qualità disponibile (fino a 4K/8K, 60 fps, HDR) in MP4.
 Funziona su Windows 10 e 11 a 64 bit. Non serve installare Python: è già incluso.
 
 PRIMO AVVIO
@@ -16,9 +17,14 @@ Il primo avvio crea anche i collegamenti "Trip YTD" sul Desktop e nel menu Start
 le volte successive usa quelli.
 
 USO
-Incolla il link (o trascinalo sulla pagina), scegli MP3 o WAV e premi "Scarica".
+Incolla il link (o trascinalo sulla pagina), scegli MP3, WAV o Video e premi "Scarica".
 I file finiscono in Download\Trip YTD (si cambia con "Cambia" in fondo alla pagina).
 Quando chiudi la pagina, Trip YTD si chiude da solo.
+
+VIDEO
+Trip YTD sceglie la risoluzione più alta, poi gli fps più alti e l'HDR, e unisce il
+video all'audio migliore in un file MP4. Sopra il 1080p YouTube usa i codec VP9 o AV1:
+li riproducono Lettore multimediale (con le estensioni VP9/AV1 di Microsoft Store) o VLC.
 
 Se sposti la cartella, avvia di nuovo "Avvia Trip YTD" per aggiornare i collegamenti.
 
@@ -28,4 +34,4 @@ DETTAGLI
 - yt-dlp si aggiorna da solo ogni 2 giorni (o con "Aggiorna" in fondo alla pagina).
 - Registro errori: %LOCALAPPDATA%\Trip YTD\trip_ytd.log
 
-Usa Trip YTD solo per audio che hai il diritto di scaricare.
+Usa Trip YTD solo per contenuti che hai il diritto di scaricare.
