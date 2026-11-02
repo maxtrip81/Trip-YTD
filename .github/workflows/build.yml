@@ -8,8 +8,9 @@ on:
   workflow_dispatch:
 
 jobs:
+  # i Mac Intel di GitHub sono i più disponibili; il .pkg contiene comunque Python per entrambe le architetture
   macos:
-    runs-on: macos-latest
+    runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v7
       - name: Crea l'app, l'installer .pkg e il pacchetto Linux
@@ -19,8 +20,6 @@ jobs:
           codesign --verify --deep --strict "dist/Trip YTD.app"
           sudo installer -pkg dist/Trip-YTD-macOS.pkg -target /
           test -x "/Applications/Trip YTD.app/Contents/Resources/launch.sh"
-          # ffmpeg per macOS è x86_64: su Apple Silicon serve Rosetta 2
-          sudo softwareupdate --install-rosetta --agree-to-license >/dev/null 2>&1 || true
       - name: Prova Trip YTD installato
         run: |
           "/Applications/Trip YTD.app/Contents/Resources/launch.sh" --no-browser --out "$RUNNER_TEMP/out" \
@@ -32,6 +31,29 @@ jobs:
           path: |
             dist/Trip-YTD-macOS.pkg
             dist/Trip-YTD-Linux.tar.gz
+
+  # prova lo stesso .pkg su Apple Silicon; non blocca la release se GitHub non ha Mac arm64 liberi
+  macos-arm64:
+    needs: macos
+    runs-on: macos-latest
+    timeout-minutes: 30
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: macos-linux
+          path: dist
+      - name: Installa il .pkg
+        run: |
+          sudo installer -pkg dist/Trip-YTD-macOS.pkg -target /
+          # ffmpeg per macOS è x86_64: su Apple Silicon serve Rosetta 2
+          sudo softwareupdate --install-rosetta --agree-to-license >/dev/null 2>&1 || true
+      - name: Prova Trip YTD installato
+        run: |
+          "/Applications/Trip YTD.app/Contents/Resources/launch.sh" --no-browser --out "$RUNNER_TEMP/out" \
+            > "$RUNNER_TEMP/server.log" 2>&1 &
+          python3 tests/smoke_test.py mac
 
   windows:
     runs-on: windows-latest
