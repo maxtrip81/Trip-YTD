@@ -639,7 +639,7 @@ def create_linux_shortcut():
         "Exec=%s %s" % (desktop_exec_arg(sys.executable), desktop_exec_arg(HERE / "trip_ytd.py")),
         "Icon=" + str(HERE / "icon.png").replace("\\", "\\\\"),
         "Terminal=false",
-        "Categories=AudioVideo;Network;",
+        "Categories=AudioVideo;",
         "Keywords=YouTube;MP3;WAV;video;download;",
         "StartupNotify=false",
         "",
