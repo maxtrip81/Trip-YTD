@@ -1,0 +1,111 @@
+# Crea e prova gli installer di Trip YTD sui tre sistemi.
+# Con un tag vX.Y pubblica anche la release con i tre file.
+name: Installer
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Crea l'app, l'installer .pkg e il pacchetto Linux
+        run: ./build.sh
+      - name: Installa il .pkg
+        run: |
+          codesign --verify --deep --strict "dist/Trip YTD.app"
+          sudo installer -pkg dist/Trip-YTD-macOS.pkg -target /
+          test -x "/Applications/Trip YTD.app/Contents/Resources/launch.sh"
+          # ffmpeg per macOS è x86_64: su Apple Silicon serve Rosetta 2
+          sudo softwareupdate --install-rosetta --agree-to-license >/dev/null 2>&1 || true
+      - name: Prova Trip YTD installato
+        run: |
+          "/Applications/Trip YTD.app/Contents/Resources/launch.sh" --no-browser --out "$RUNNER_TEMP/out" \
+            > "$RUNNER_TEMP/server.log" 2>&1 &
+          python3 tests/smoke_test.py mac
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos-linux
+          path: |
+            dist/Trip-YTD-macOS.pkg
+            dist/Trip-YTD-Linux.tar.gz
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Inno Setup
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
+            choco install innosetup -y --no-progress
+          }
+      - name: Crea l'installer
+        run: ./src/windows/build.ps1
+      - name: Installa
+        run: |
+          Start-Process dist\Trip-YTD-Windows-Setup.exe -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/TASKS=desktopicon' -Wait
+          $app = "$env:LOCALAPPDATA\Programs\Trip YTD"
+          if (-not (Test-Path "$app\runtime\pythonw.exe")) { throw "Trip YTD non installato in $app" }
+          if (-not (Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Trip YTD.lnk")) { throw 'Collegamento nel menu Start mancante' }
+          if (-not (Test-Path "$env:USERPROFILE\Desktop\Trip YTD.lnk")) { throw 'Collegamento sul desktop mancante' }
+      - name: Prova Trip YTD installato
+        run: |
+          $app = "$env:LOCALAPPDATA\Programs\Trip YTD"
+          Start-Process "$app\runtime\pythonw.exe" -ArgumentList "`"$app\app\trip_ytd.py`"", '--no-browser', '--out', "`"$env:RUNNER_TEMP\out`""
+          python tests\smoke_test.py windows
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Disinstalla
+        run: |
+          $app = "$env:LOCALAPPDATA\Programs\Trip YTD"
+          Start-Process "$app\unins000.exe" -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES' -Wait
+          # il programma di disinstallazione prosegue in una copia temporanea: attende che finisca
+          for ($i = 0; $i -lt 60 -and (Test-Path "$app\runtime"); $i++) { Start-Sleep 1 }
+          if (Test-Path "$app\runtime") { throw 'Trip YTD non disinstallato' }
+          if (Test-Path "$env:LOCALAPPDATA\Trip YTD") { throw 'Componenti non rimossi' }
+          if (Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Trip YTD.lnk") { throw 'Collegamento non rimosso' }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows
+          path: dist/Trip-YTD-Windows-Setup.exe
+
+  linux:
+    needs: macos
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: macos-linux
+          path: dist
+      - name: Avvia Trip YTD dal pacchetto
+        run: |
+          tar -xzf dist/Trip-YTD-Linux.tar.gz -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP/Trip YTD/trip-ytd"
+          sudo apt-get install -y -qq desktop-file-utils >/dev/null
+          desktop-file-validate ~/.local/share/applications/trip-ytd.desktop
+          cat ~/.local/share/applications/trip-ytd.desktop
+      - name: Prova Trip YTD
+        run: python3 tests/smoke_test.py linux
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [macos, windows, linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Pubblica la release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sed "s/@TAG@/$GITHUB_REF_NAME/g" .github/release-notes.md > "$RUNNER_TEMP/notes.md"
+          gh release create "$GITHUB_REF_NAME" dist/* --title "Trip YTD ${GITHUB_REF_NAME#v}" \
+            --notes-file "$RUNNER_TEMP/notes.md" --latest

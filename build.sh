@@ -1,16 +1,19 @@
 #!/bin/bash
-# Crea i pacchetti di Trip YTD in dist/:
-#   Trip YTD.app               app per macOS, pronta all'uso
-#   Trip-YTD-macOS.zip       la stessa app, da condividere
-#   Trip-YTD-Windows.zip     cartella per Windows con Python incluso
-#   Trip-YTD-Linux.tar.gz    cartella per Linux (usa il Python del sistema)
+# Crea i pacchetti di Trip YTD in dist/ (su un Mac):
+#   Trip YTD.app            app per macOS con Python incluso (Apple Silicon e Intel)
+#   Trip-YTD-macOS.pkg      installer per macOS
+#   Trip-YTD-Linux.tar.gz   cartella per Linux (usa il Python del sistema)
+# L'installer per Windows si crea su Windows con src/windows/build.ps1.
 set -euo pipefail
 cd "$(dirname "$0")"
 
-# Python "embeddable" per Windows 64 bit (python.org), con il suo SHA-256 ufficiale
-PY_VERSION=3.14.10
-PY_SHA256=90905e64a840557d8c1bc4f5b74db3d7ee85e3ffb217611cac1c7813acea4159
-PY_ZIP="python-$PY_VERSION-embed-amd64.zip"
+VERSION=$(sed -n 's/^VERSION = "\(.*\)"$/\1/p' src/trip_ytd.py)
+
+# Python per macOS (python-build-standalone di Astral), uno per architettura, con il suo SHA-256
+PBS_RELEASE=20261026
+PBS_PYTHON=3.14.10
+PBS_SHA256_aarch64=95eb8c87d16af37c54e9765e31d8c56c0d8ffa9968ea0f704f73a9b83f84e9f9
+PBS_SHA256_x86_64=2fd8becd48cf0ff5f0a15df3c0db7cae7aa708dcaacf901bd30d6cdd6229370b
 
 DIST=dist
 BUILD=build
@@ -47,51 +50,72 @@ EOF
   rm -rf "$tmp"
 fi
 
-# --- macOS ---------------------------------------------------------------------
+# --- macOS: app ----------------------------------------------------------------
+mac_python() {  # $1 = aarch64 | x86_64, $2 = cartella di destinazione
+  local name="cpython-$PBS_PYTHON+$PBS_RELEASE-$1-apple-darwin-install_only_stripped.tar.gz"
+  local sha_var="PBS_SHA256_$1"
+  local file="$BUILD/cache/$name"
+  if [ ! -f "$file" ]; then
+    curl -fsSL --retry 2 -o "$file.part" \
+      "https://github.com/astral-sh/python-build-standalone/releases/download/$PBS_RELEASE/${name//+/%2B}"
+    mv "$file.part" "$file"
+  fi
+  echo "${!sha_var}  $file" | shasum -a 256 -c --status || {
+    echo "Checksum di $name non valido" >&2; rm -f "$file"; exit 1; }
+  mkdir -p "$2"
+  tar -xzf "$file" -C "$2" --strip-components 1
+  # tiene solo ciò che serve a Trip YTD: via Tcl/Tk, pip, header e documentazione
+  (cd "$2" && rm -rf include share bin/idle* bin/pip* bin/pydoc* bin/python*-config \
+    lib/pkgconfig lib/itcl* lib/thread* lib/tcl* lib/tk* lib/libtcl* \
+    lib/python3.*/{idlelib,tkinter,turtledemo,ensurepip,pydoc_data,config-*} \
+    lib/python3.*/site-packages/* lib/python3.*/lib-dynload/_tkinter*)
+}
+
 APP="$DIST/Trip YTD.app"
 RES="$APP/Contents/Resources"
 rm -rf "$APP"
 osacompile -o "$APP" src/launcher.applescript
-cp src/trip_ytd.py src/ui.html src/icon.svg "$RES/"
+cp src/trip_ytd.py src/ui.html src/icon.svg src/mac/launch.sh "$RES/"
 cp src/icon.icns "$RES/applet.icns"
 rm -f "$RES/Assets.car"
+mac_python aarch64 "$RES/python-arm64"
+mac_python x86_64 "$RES/python-x86_64"
+
+# precompila la libreria standard, così l'app non scrive nulla al proprio interno
+for arch in arm64 x86_64; do
+  if "$RES/python-$arch/bin/python3" -c '' 2>/dev/null; then
+    "$RES/python-$arch/bin/python3" -m compileall -q -j 0 --invalidation-mode unchecked-hash \
+      "$RES"/python-arm64/lib/python3.* "$RES"/python-x86_64/lib/python3.* >/dev/null
+    break
+  fi
+done
 
 plist="$APP/Contents/Info.plist"
 pb() { /usr/libexec/PlistBuddy -c "$1" "$plist"; }
 pb "Set :CFBundleName Trip YTD"
 pb "Set :CFBundleIdentifier com.trip.ytd" 2>/dev/null || pb "Add :CFBundleIdentifier string com.trip.ytd"
-pb "Add :CFBundleShortVersionString string 1.3" 2>/dev/null || pb "Set :CFBundleShortVersionString 1.3"
+pb "Add :CFBundleShortVersionString string $VERSION" 2>/dev/null || pb "Set :CFBundleShortVersionString $VERSION"
+pb "Add :LSMinimumSystemVersion string 11.0" 2>/dev/null || pb "Set :LSMinimumSystemVersion 11.0"
 pb "Delete :CFBundleIconName" 2>/dev/null || true
 
 # la firma ad-hoc è necessaria su Apple Silicon dopo aver modificato il pacchetto
 codesign --force --deep --sign - "$APP" 2>/dev/null
-rm -f "$DIST/Trip-YTD-macOS.zip"
-ditto -c -k --keepParent "$APP" "$DIST/Trip-YTD-macOS.zip"
 echo "Creato: $APP"
-echo "Creato: $DIST/Trip-YTD-macOS.zip"
 
-# --- Windows -------------------------------------------------------------------
-if [ ! -f "$BUILD/cache/$PY_ZIP" ]; then
-  curl -fsSL --retry 2 -o "$BUILD/cache/$PY_ZIP.part" "https://www.python.org/ftp/python/$PY_VERSION/$PY_ZIP"
-  mv "$BUILD/cache/$PY_ZIP.part" "$BUILD/cache/$PY_ZIP"
-fi
-echo "$PY_SHA256  $BUILD/cache/$PY_ZIP" | shasum -a 256 -c --status || {
-  echo "Checksum di $PY_ZIP non valido" >&2; rm -f "$BUILD/cache/$PY_ZIP"; exit 1; }
-
-WIN="$BUILD/windows/Trip YTD"
-rm -rf "$BUILD/windows"
-mkdir -p "$WIN/app" "$WIN/runtime"
-unzip -q "$BUILD/cache/$PY_ZIP" -d "$WIN/runtime"
-cp src/trip_ytd.py src/ui.html src/icon.svg src/icon.ico "$WIN/app/"
-
-# i file .cmd e .txt per Windows vogliono le terminazioni di riga CRLF
-crlf() { sed 's/$/\r/' "$1" > "$2"; }
-crlf src/windows/avvia.cmd "$WIN/Avvia Trip YTD.cmd"
-{ printf '\xef\xbb\xbf'; sed 's/$/\r/' src/windows/LEGGIMI.txt; } > "$WIN/LEGGIMI.txt"  # BOM: Blocco note la legge come UTF-8
-
-rm -f "$DIST/Trip-YTD-Windows.zip"
-(cd "$BUILD/windows" && zip -qrX "../../$DIST/Trip-YTD-Windows.zip" "Trip YTD")
-echo "Creato: $DIST/Trip-YTD-Windows.zip"
+# --- macOS: installer .pkg -----------------------------------------------------
+PKG="$BUILD/pkg"
+rm -rf "$PKG"
+mkdir -p "$PKG/root"
+ditto "$APP" "$PKG/root/Trip YTD.app"
+pkgbuild --analyze --root "$PKG/root" "$PKG/component.plist" >/dev/null
+# installa sempre in Applicazioni, anche se sul Mac esiste un'altra copia dell'app
+/usr/libexec/PlistBuddy -c "Set :0:BundleIsRelocatable false" "$PKG/component.plist"
+pkgbuild --quiet --root "$PKG/root" --component-plist "$PKG/component.plist" \
+  --identifier com.trip.ytd --version "$VERSION" --install-location /Applications "$PKG/TripYTD.pkg"
+sed "s/@VERSION@/$VERSION/g" src/mac/distribution.xml > "$PKG/distribution.xml"
+productbuild --quiet --distribution "$PKG/distribution.xml" --resources src/mac/resources \
+  --package-path "$PKG" "$DIST/Trip-YTD-macOS.pkg"
+echo "Creato: $DIST/Trip-YTD-macOS.pkg"
 
 # --- Linux ---------------------------------------------------------------------
 LNX="$BUILD/linux/Trip YTD"

@@ -4,35 +4,36 @@ Incolla un link YouTube e scarica l'audio in **MP3 320 kbps** o **WAV 16 bit / 4
 oppure il **video nella massima qualità disponibile** (fino a 4K/8K, 60 fps, HDR) in MP4.
 Per **macOS**, **Windows** e **Linux**.
 
-## Scarica
+## Scarica e installa
 
-| Sistema | Pacchetto |
+| Sistema | Installer |
 |---|---|
-| macOS (Apple Silicon e Intel) | [Trip-YTD-macOS.zip](https://github.com/maxtrip81/Trip-YTD/releases/latest/download/Trip-YTD-macOS.zip) |
-| Windows 10 e 11, 64 bit | [Trip-YTD-Windows.zip](https://github.com/maxtrip81/Trip-YTD/releases/latest/download/Trip-YTD-Windows.zip) |
+| macOS 11 o successivo (Apple Silicon e Intel) | [Trip-YTD-macOS.pkg](https://github.com/maxtrip81/Trip-YTD/releases/latest/download/Trip-YTD-macOS.pkg) |
+| Windows 10 e 11, 64 bit | [Trip-YTD-Windows-Setup.exe](https://github.com/maxtrip81/Trip-YTD/releases/latest/download/Trip-YTD-Windows-Setup.exe) |
 | Linux 64 bit (x86_64 o ARM64) | [Trip-YTD-Linux.tar.gz](https://github.com/maxtrip81/Trip-YTD/releases/latest/download/Trip-YTD-Linux.tar.gz) |
 
 Tutte le versioni: [Releases](https://github.com/maxtrip81/Trip-YTD/releases).
 
-## Primo avvio
+**macOS.** Apri `Trip-YTD-macOS.pkg` e segui l'installazione: Trip YTD finisce in Applicazioni,
+con Python già incluso. L'installer non è firmato da uno sviluppatore Apple: se macOS lo blocca,
+vai in Impostazioni di Sistema › Privacy e sicurezza e premi «Apri comunque».
+Per disinstallare, trascina Trip YTD nel Cestino.
 
-**macOS.** Estrai lo zip e trascina `Trip YTD.app` in Applicazioni. La prima volta aprila con
-tasto destro › Apri, perché l'app non è firmata da uno sviluppatore Apple. Se macOS propone di
-installare gli «Strumenti da riga di comando» (servono a Python), accetta e poi riapri l'app.
-
-**Windows.** Estrai tutto lo zip in una cartella stabile e fai doppio clic su
-`Avvia Trip YTD`. Se compare «Windows ha protetto il PC»: Ulteriori informazioni ›
-Esegui comunque. Il primo avvio crea i collegamenti «Trip YTD» su Desktop e menu Start.
-Python è già incluso.
+**Windows.** Apri `Trip-YTD-Windows-Setup.exe`. Se compare «Windows ha protetto il PC»:
+Ulteriori informazioni › Esegui comunque. Non servono permessi di amministratore: Trip YTD si
+installa per il tuo utente, con Python incluso, e compare nel menu Start (e, se vuoi, sul
+desktop). Si disinstalla da Impostazioni › App, che rimuove anche i componenti scaricati.
 
 **Linux.** Estrai l'archivio in una cartella stabile, apri un terminale lì ed esegui
 `./trip-ytd`. Il primo avvio aggiunge «Trip YTD» al menu delle applicazioni. Serve Python 3.8
 o successivo, presente in quasi tutte le distribuzioni dal 2019 in poi (Ubuntu 20.04,
 Debian 10, Fedora 29, Linux Mint 20 o successive).
 
-Poi, su tutti i sistemi:
-1. La prima volta premi **Installa componenti** (una volta sola).
-2. Incolla il link (o trascinalo sulla pagina), scegli MP3, WAV o Video e premi **Scarica**.
+## Uso
+
+1. Apri Trip YTD: la sua pagina si apre nel browser.
+2. La prima volta premi **Installa componenti** (una volta sola).
+3. Incolla il link (o trascinalo sulla pagina), scegli MP3, WAV o Video e premi **Scarica**.
 
 I file finiscono nella cartella Download (Scaricati su Linux in italiano), in `Trip YTD`.
 Si cambia con «Cambia» in fondo alla pagina. Quando chiudi la pagina, Trip YTD si chiude da solo.
@@ -66,10 +67,17 @@ Sopra il 1080p YouTube usa i codec VP9 o AV1, che QuickTime non riproduce:
 - Si accettano solo link a un singolo video: playlist e canali vengono rifiutati.
 - Registro: `trip_ytd.log` nella cartella dei componenti.
 
-## Ricostruire i pacchetti
+## Creare gli installer
 
-Dopo aver modificato i file in `src/`, su un Mac esegui `./build.sh`: ricrea tutto in `dist/`.
-Per la versione Windows scarica (e verifica) Python 3.14 embeddable da python.org.
-Per provare senza pacchetti: `python3 src/trip_ytd.py`.
+Ogni tag `vX.Y` avvia [GitHub Actions](.github/workflows/build.yml), che su macOS, Windows e
+Linux crea gli installer, li installa, prova Trip YTD e pubblica la release.
+
+A mano:
+- **macOS e Linux**: su un Mac esegui `./build.sh`, che crea in `dist/` l'app, l'installer `.pkg`
+  (con Python di [python-build-standalone](https://github.com/astral-sh/python-build-standalone))
+  e l'archivio per Linux.
+- **Windows**: con [Inno Setup 6](https://jrsoftware.org/isinfo.php) installato, esegui
+  `powershell -File src\windows\build.ps1` (usa Python embeddable di python.org).
+- Per provare senza installare: `python3 src/trip_ytd.py`.
 
 Usa Trip YTD solo per contenuti che hai il diritto di scaricare.

@@ -34,7 +34,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 APP_NAME = "Trip YTD"
-VERSION = "1.3"
+VERSION = "1.4"
 HOST = "127.0.0.1"
 PORT = 47320
 URL = "http://%s:%d/" % (HOST, PORT)
@@ -654,29 +654,6 @@ def create_linux_shortcut():
         log.warning("voce del menu non creata: %s", e)
 
 
-def create_windows_shortcuts():
-    """Crea i collegamenti «Trip YTD» sul Desktop e nel menu Start."""
-    pythonw = Path(sys.executable).with_name("pythonw.exe")
-    script = (
-        "$w = New-Object -ComObject WScript.Shell\n"
-        "foreach ($dir in @([Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('Programs'))) {\n"
-        "  $s = $w.CreateShortcut((Join-Path $dir 'Trip YTD.lnk'))\n"
-        "  $s.TargetPath = %s\n"
-        "  $s.Arguments = %s\n"
-        "  $s.WorkingDirectory = %s\n"
-        "  $s.IconLocation = %s\n"
-        "  $s.Description = 'Audio e video da YouTube'\n"
-        "  $s.Save()\n"
-        "}\n"
-    ) % (ps_str(pythonw), ps_str('"%s"' % (HERE / "trip_ytd.py")), ps_str(HERE.parent), ps_str(HERE / "icon.ico"))
-    try:
-        r = run_powershell(script)
-        if r.returncode != 0:
-            log.warning("collegamenti non creati: %s", r.stderr.decode(errors="replace").strip())
-    except (OSError, subprocess.SubprocessError) as e:
-        log.warning("collegamenti non creati: %s", e)
-
-
 # ---------------------------------------------------------------------------
 # Download
 
@@ -922,6 +899,14 @@ class TripYTD:
                 server.shutdown()
                 return
 
+    def quit(self, server):
+        """Annulla i download in corso e chiude il server (usato dagli installer)."""
+        log.info("richiesta di chiusura")
+        for job in list(self.jobs):
+            if job.active:
+                job.cancel()
+        threading.Thread(target=server.shutdown, daemon=True).start()
+
     # componenti
 
     def installed(self):
@@ -1146,6 +1131,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(400, {"error": "Richiesta non valida."})
 
         app = self.app
+        if self.path == "/api/quit":
+            self._send(200, {"ok": True})
+            return app.quit(self.server)
         if self.path == "/api/setup":
             app.start_setup()
             return self._send(200, {"ok": True})
@@ -1197,18 +1185,33 @@ def already_running():
         return False
 
 
+def stop_running():
+    """Chiede a un Trip YTD già aperto di chiudersi e attende fino a 5 secondi."""
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    req = urllib.request.Request(URL + "api/quit", data=b"{}", method="POST",
+                                 headers={"X-Trip-YTD": "1", "Content-Type": "application/json"})
+    try:
+        opener.open(req, timeout=3).close()
+    except Exception:
+        return  # non era aperto
+    for _ in range(50):
+        if not already_running():
+            return
+        time.sleep(0.1)
+
+
 def main():
     ap = argparse.ArgumentParser(description="Trip YTD: audio (MP3 320k, WAV) e video da YouTube.")
     ap.add_argument("--no-browser", action="store_true", help="non aprire il browser all'avvio")
     ap.add_argument("--out", help="cartella di destinazione per questa sessione")
-    ap.add_argument("--shortcuts", action="store_true",
-                    help="Windows: collegamenti su Desktop e menu Start; Linux: voce nel menu delle applicazioni")
+    ap.add_argument("--shortcuts", action="store_true", help="Linux: aggiunge Trip YTD al menu delle applicazioni")
+    ap.add_argument("--quit", action="store_true", help="chiude Trip YTD se è aperto")
     args = ap.parse_args()
+    if args.quit:
+        return stop_running()
 
     SUPPORT.mkdir(parents=True, exist_ok=True)
-    if args.shortcuts and IS_WIN:
-        threading.Thread(target=create_windows_shortcuts).start()
-    elif args.shortcuts and IS_LINUX:
+    if args.shortcuts and IS_LINUX:
         create_linux_shortcut()
 
     if already_running():
