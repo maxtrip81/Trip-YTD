@@ -326,7 +326,9 @@
   let pollTimer = null;
   let toastTimer = null;
   let awaitingUpdate = false;
-  const isWindows = () => (state ? state.platform === 'windows' : /Win/.test(navigator.platform));
+  const platform = () => state ? state.platform :
+    /Win/.test(navigator.platform) ? 'windows' : /Mac/.test(navigator.platform) ? 'mac' : 'linux';
+  const REVEAL_LABEL = { windows: 'Mostra in Esplora file', mac: 'Mostra nel Finder', linux: 'Mostra nella cartella' };
 
   // --- API -----------------------------------------------------------------
   async function api(path, body) {
@@ -568,8 +570,7 @@
         .then(() => api(`/api/jobs/${job.id}/dismiss`)).then(refresh);
       const items = [];
       if (ACTIVE.includes(job.status)) items.push(btn('Annulla', act('cancel'), true));
-      const revealLabel = isWindows() ? 'Mostra in Esplora file' : 'Mostra nel Finder';
-      if (job.status === 'done') items.push(btn(revealLabel, act('reveal')), btn(job.format === 'video' ? 'Guarda' : 'Ascolta', act('play')));
+      if (job.status === 'done') items.push(btn(REVEAL_LABEL[platform()], act('reveal')), btn(job.format === 'video' ? 'Guarda' : 'Ascolta', act('play')));
       if (job.status === 'error' || job.status === 'cancelled') items.push(btn('Riprova', retry));
       if (!ACTIVE.includes(job.status)) items.push(btn('Rimuovi', act('dismiss'), true));
       actions.replaceChildren(...items);
@@ -619,7 +620,7 @@
       urlInput.value = text.trim();
       checkInput();
     } catch {
-      setHint(`Premi ${isWindows() ? 'Ctrl+V' : '⌘V'} per incollare il link.`, '');
+      setHint(`Premi ${platform() === 'mac' ? '⌘V' : 'Ctrl+V'} per incollare il link.`, '');
     }
     urlInput.focus();
   });

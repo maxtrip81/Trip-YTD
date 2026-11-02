@@ -1,4 +1,4 @@
 .DS_Store
 # generati da build.sh
-Trip YTD/build/
-Trip YTD/dist/
+build/
+dist/

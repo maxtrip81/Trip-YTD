@@ -1,8 +1,9 @@
 #!/bin/bash
 # Crea i pacchetti di Trip YTD in dist/:
 #   Trip YTD.app               app per macOS, pronta all'uso
-#   Trip YTD - macOS.zip       la stessa app, da condividere
-#   Trip YTD - Windows.zip     cartella per Windows con Python incluso
+#   Trip-YTD-macOS.zip       la stessa app, da condividere
+#   Trip-YTD-Windows.zip     cartella per Windows con Python incluso
+#   Trip-YTD-Linux.tar.gz    cartella per Linux (usa il Python del sistema)
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -16,7 +17,7 @@ BUILD=build
 mkdir -p "$DIST" "$BUILD/cache"
 
 # --- icone (generate una volta sola) -----------------------------------------
-if [ ! -f src/icon.icns ] || [ ! -f src/icon.ico ]; then
+if [ ! -f src/icon.icns ] || [ ! -f src/icon.ico ] || [ ! -f src/icon.png ]; then
   tmp="$(mktemp -d)"
   swift src/make_icon.swift "$tmp/icon_1024.png"
   mkdir "$tmp/icon.iconset"
@@ -25,6 +26,7 @@ if [ ! -f src/icon.icns ] || [ ! -f src/icon.ico ]; then
     sips -z $((s * 2)) $((s * 2)) "$tmp/icon_1024.png" --out "$tmp/icon.iconset/icon_${s}x${s}@2x.png" >/dev/null
   done
   iconutil -c icns "$tmp/icon.iconset" -o src/icon.icns
+  sips -z 256 256 "$tmp/icon_1024.png" --out src/icon.png >/dev/null  # menu delle applicazioni di Linux
   for s in 16 24 32 48 64 256; do
     sips -z $s $s "$tmp/icon_1024.png" --out "$tmp/ico_$s.png" >/dev/null
   done
@@ -58,15 +60,15 @@ plist="$APP/Contents/Info.plist"
 pb() { /usr/libexec/PlistBuddy -c "$1" "$plist"; }
 pb "Set :CFBundleName Trip YTD"
 pb "Set :CFBundleIdentifier com.trip.ytd" 2>/dev/null || pb "Add :CFBundleIdentifier string com.trip.ytd"
-pb "Add :CFBundleShortVersionString string 1.2" 2>/dev/null || pb "Set :CFBundleShortVersionString 1.2"
+pb "Add :CFBundleShortVersionString string 1.3" 2>/dev/null || pb "Set :CFBundleShortVersionString 1.3"
 pb "Delete :CFBundleIconName" 2>/dev/null || true
 
 # la firma ad-hoc è necessaria su Apple Silicon dopo aver modificato il pacchetto
 codesign --force --deep --sign - "$APP" 2>/dev/null
-rm -f "$DIST/Trip YTD - macOS.zip"
-ditto -c -k --keepParent "$APP" "$DIST/Trip YTD - macOS.zip"
+rm -f "$DIST/Trip-YTD-macOS.zip"
+ditto -c -k --keepParent "$APP" "$DIST/Trip-YTD-macOS.zip"
 echo "Creato: $APP"
-echo "Creato: $DIST/Trip YTD - macOS.zip"
+echo "Creato: $DIST/Trip-YTD-macOS.zip"
 
 # --- Windows -------------------------------------------------------------------
 if [ ! -f "$BUILD/cache/$PY_ZIP" ]; then
@@ -87,6 +89,20 @@ crlf() { sed 's/$/\r/' "$1" > "$2"; }
 crlf src/windows/avvia.cmd "$WIN/Avvia Trip YTD.cmd"
 { printf '\xef\xbb\xbf'; sed 's/$/\r/' src/windows/LEGGIMI.txt; } > "$WIN/LEGGIMI.txt"  # BOM: Blocco note la legge come UTF-8
 
-rm -f "$DIST/Trip YTD - Windows.zip"
-(cd "$BUILD/windows" && zip -qrX "../../$DIST/Trip YTD - Windows.zip" "Trip YTD")
-echo "Creato: $DIST/Trip YTD - Windows.zip"
+rm -f "$DIST/Trip-YTD-Windows.zip"
+(cd "$BUILD/windows" && zip -qrX "../../$DIST/Trip-YTD-Windows.zip" "Trip YTD")
+echo "Creato: $DIST/Trip-YTD-Windows.zip"
+
+# --- Linux ---------------------------------------------------------------------
+LNX="$BUILD/linux/Trip YTD"
+rm -rf "$BUILD/linux"
+mkdir -p "$LNX/app"
+cp src/trip_ytd.py src/ui.html src/icon.svg src/icon.png "$LNX/app/"
+cp src/linux/trip-ytd src/linux/LEGGIMI.txt "$LNX/"
+chmod 644 "$LNX/app/"* "$LNX/LEGGIMI.txt"
+chmod 755 "$LNX/trip-ytd"
+rm -f "$DIST/Trip-YTD-Linux.tar.gz"
+# tar.gz conserva i permessi di esecuzione; niente attributi estesi né file ._ di macOS
+COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata --uid 0 --gid 0 --uname root --gname root \
+  -czf "$DIST/Trip-YTD-Linux.tar.gz" -C "$BUILD/linux" "Trip YTD"
+echo "Creato: $DIST/Trip-YTD-Linux.tar.gz"

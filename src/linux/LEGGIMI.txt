@@ -1,0 +1,38 @@
+TRIP YTD per Linux
+==================
+
+Incolla un link YouTube e scarica l'audio in MP3 320 kbps o WAV 16 bit / 44,1 kHz,
+oppure il video nella massima qualità disponibile (fino a 4K/8K, 60 fps, HDR) in MP4.
+Funziona sulle distribuzioni a 64 bit (x86_64 o ARM64) dal 2019 in poi, per esempio
+Ubuntu 20.04, Debian 10, Fedora 29, Linux Mint 20 o successive. Serve Python 3.8 o
+successivo, già presente in quasi tutte.
+
+PRIMO AVVIO
+1. Estrai l'archivio in una cartella stabile, per esempio ~/Applicazioni/Trip YTD.
+2. Apri un terminale in quella cartella (tasto destro > "Apri nel terminale") ed esegui:
+       ./trip-ytd
+3. Si apre la pagina di Trip YTD nel browser: premi "Installa componenti"
+   (circa 240 MB da scaricare, 470 MB su disco, una volta sola).
+
+Il primo avvio aggiunge "Trip YTD" al menu delle applicazioni: le volte successive usa quello.
+Se sposti la cartella, esegui di nuovo ./trip-ytd per aggiornare la voce del menu.
+
+USO
+Incolla il link (o trascinalo sulla pagina), scegli MP3, WAV o Video e premi "Scarica".
+I file finiscono nella cartella Scaricati (o Download) > Trip YTD; si cambia con "Cambia"
+in fondo alla pagina. Quando chiudi la pagina, Trip YTD si chiude da solo.
+
+VIDEO
+Trip YTD sceglie la risoluzione più alta, poi gli fps più alti e l'HDR, e unisce il
+video all'audio migliore in un file MP4. Sopra il 1080p YouTube usa i codec VP9 o AV1:
+li riproducono VLC, mpv, Celluloid e i lettori video di GNOME e KDE.
+
+DETTAGLI
+- Componenti in ~/.local/share/trip-ytd/bin: yt-dlp e Deno (GitHub ufficiale) e
+  ffmpeg (build del progetto yt-dlp), tutti verificati con checksum SHA-256.
+- yt-dlp si aggiorna da solo ogni 2 giorni (o con "Aggiorna" in fondo alla pagina).
+- "Cambia" usa la finestra di scelta cartella di zenity o kdialog. Se segnala un errore,
+  installa zenity (per esempio: sudo apt install zenity).
+- Registro errori: ~/.local/share/trip-ytd/trip_ytd.log
+
+Usa Trip YTD solo per contenuti che hai il diritto di scaricare.

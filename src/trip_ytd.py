@@ -3,10 +3,10 @@
 oppure il video nella massima qualità disponibile.
 
 Server locale (solo libreria standard di Python) con interfaccia nel browser,
-per macOS e Windows. Alla prima apertura scarica i componenti esterni
+per macOS, Windows e Linux. Alla prima apertura scarica i componenti esterni
 (yt-dlp, Deno, ffmpeg, ffprobe) dalle loro fonti ufficiali nella cartella
 dati dell'app: ~/Library/Application Support/Trip YTD su macOS,
-%LOCALAPPDATA%\\Trip YTD su Windows.
+%LOCALAPPDATA%\\Trip YTD su Windows, ~/.local/share/trip-ytd su Linux.
 """
 
 import argparse
@@ -21,6 +21,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tarfile
 import threading
 import time
 import urllib.parse
@@ -33,7 +34,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 APP_NAME = "Trip YTD"
-VERSION = "1.2"
+VERSION = "1.3"
 HOST = "127.0.0.1"
 PORT = 47320
 URL = "http://%s:%d/" % (HOST, PORT)
@@ -41,12 +42,16 @@ USER_AGENT = "%s/%s" % (APP_NAME, VERSION)
 
 IS_WIN = sys.platform == "win32"
 IS_MAC = sys.platform == "darwin"
+IS_LINUX = not (IS_WIN or IS_MAC)
 
 HERE = Path(__file__).resolve().parent
 if IS_WIN:
     SUPPORT = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local") / APP_NAME
-else:
+elif IS_MAC:
     SUPPORT = Path.home() / "Library" / "Application Support" / APP_NAME
+else:
+    XDG_DATA = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
+    SUPPORT = XDG_DATA / "trip-ytd"
 BIN = SUPPORT / "bin"
 WORK = SUPPORT / "work"
 CONFIG_FILE = SUPPORT / "config.json"
@@ -65,9 +70,15 @@ YTDLP_RELEASE = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/"
 DENO_RELEASE = "https://github.com/denoland/deno/releases/latest/download/"
 # macOS: build statiche indicate su ffmpeg.org/download.html
 EVERMEET_INFO = "https://evermeet.cx/ffmpeg/info/%s/release"
-# Windows: build curate dal progetto yt-dlp
-FFMPEG_WIN_RELEASE = "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/"
+# Windows e Linux: build curate dal progetto yt-dlp (su Linux con le librerie incluse, richiedono glibc 2.28)
+FFMPEG_BUILDS = "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/"
 FFMPEG_WIN_ZIP = "ffmpeg-master-latest-win64-gpl-shared.zip"
+# Linux: architettura → (yt-dlp, Deno, ffmpeg)
+LINUX_ASSETS = {
+    "x86_64": ("yt-dlp_linux", "x86_64-unknown-linux-gnu", "ffmpeg-master-latest-linux64-gpl.tar.xz"),
+    "aarch64": ("yt-dlp_linux_aarch64", "aarch64-unknown-linux-gnu", "ffmpeg-master-latest-linuxarm64-gpl.tar.xz"),
+}
+LINUX_ASSETS["amd64"], LINUX_ASSETS["arm64"] = LINUX_ASSETS["x86_64"], LINUX_ASSETS["aarch64"]
 
 AUDIO_ARGS = ["-f", "bestaudio/best", "-x", "--postprocessor-args", "ExtractAudio:-ar 44100"]
 COVER_ARGS = ["--embed-thumbnail", "--convert-thumbnails", "jpg"]
@@ -196,6 +207,22 @@ def downloads_dir():
                 return Path(path)
         except Exception:
             pass
+    elif IS_LINUX:
+        # la cartella Download ha il nome nella lingua del sistema (es. ~/Scaricati)
+        try:
+            r = subprocess.run(["xdg-user-dir", "DOWNLOAD"], capture_output=True, text=True, timeout=5)
+            path = r.stdout.strip()
+            if r.returncode == 0 and path and Path(path) != Path.home():
+                return Path(path)
+        except (OSError, subprocess.SubprocessError):
+            pass
+        dirs = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "user-dirs.dirs"
+        try:
+            m = re.search(r'^XDG_DOWNLOAD_DIR="([^"]+)"', dirs.read_text(encoding="utf-8"), re.M)
+            if m:
+                return Path(m.group(1).replace("$HOME", str(Path.home())))
+        except OSError:
+            pass
     return Path.home() / "Downloads"
 
 
@@ -234,7 +261,7 @@ def run_powershell(script, timeout=120):
 # Download dei componenti
 
 # Su macOS i download passano da curl di sistema: alcuni mirror richiedono TLS 1.3,
-# che il Python di sistema (LibreSSL 2.8) non supporta. Su Windows basta urllib.
+# che il Python di sistema (LibreSSL 2.8) non supporta. Su Windows e Linux basta urllib.
 CURL = ["/usr/bin/curl", "-fL", "--retry", "2", "--connect-timeout", "20", "-A", USER_AGENT]
 
 
@@ -332,22 +359,32 @@ def make_executable(path):
     path.chmod(0o755)
 
 
-def extract_members(zip_path, wanted, dest_dir):
-    """Estrae in dest_dir (senza sottocartelle) i file il cui nome soddisfa wanted(nome)."""
+def extract_members(archive, wanted, dest_dir):
+    """Estrae in dest_dir (senza sottocartelle) i file dell'archivio zip o tar il cui nome soddisfa wanted(nome)."""
     found = []
-    with zipfile.ZipFile(zip_path) as z:
-        for info in z.infolist():
-            base = info.filename.rstrip("/").split("/")[-1]
-            if info.is_dir() or not wanted(base):
-                continue
-            dest = dest_dir / base
-            tmp = dest.with_name(base + ".part")
-            with z.open(info) as src, open(tmp, "wb") as out:
-                shutil.copyfileobj(src, out)
-            tmp.replace(dest)
-            make_executable(dest)
-            found.append(base)
+    if archive.name.endswith((".tar.xz", ".tar.gz")):
+        with tarfile.open(archive) as t:
+            for member in t:
+                base = member.name.rstrip("/").split("/")[-1]
+                if member.isfile() and wanted(base):
+                    _write_member(t.extractfile(member), dest_dir / base)
+                    found.append(base)
+    else:
+        with zipfile.ZipFile(archive) as z:
+            for info in z.infolist():
+                base = info.filename.rstrip("/").split("/")[-1]
+                if not info.is_dir() and wanted(base):
+                    _write_member(z.open(info), dest_dir / base)
+                    found.append(base)
     return found
+
+
+def _write_member(src, dest):
+    tmp = dest.with_name(dest.name + ".part")
+    with src, open(tmp, "wb") as out:
+        shutil.copyfileobj(src, out)
+    tmp.replace(dest)
+    make_executable(dest)
 
 
 def install_ytdlp(asset, filename):
@@ -389,16 +426,17 @@ def install_evermeet(tool):
     return install
 
 
-def install_ffmpeg_windows(dest_dir, progress):
-    expected = checksum_for(http_text(FFMPEG_WIN_RELEASE + "checksums.sha256"), FFMPEG_WIN_ZIP)
-    tmp = fetch(FFMPEG_WIN_RELEASE + FFMPEG_WIN_ZIP, dest_dir / FFMPEG_WIN_ZIP, progress)
-    try:
-        verify(tmp, expected, "ffmpeg")
-        # build "shared": servono anche le DLL accanto agli eseguibili
-        extract_members(tmp, lambda base: base in ("ffmpeg.exe", "ffprobe.exe") or base.endswith(".dll"), dest_dir)
-    finally:
-        if tmp.exists():
-            tmp.unlink()
+def install_ffmpeg_builds(archive, wanted):
+    def install(dest_dir, progress):
+        expected = checksum_for(http_text(FFMPEG_BUILDS + "checksums.sha256"), archive)
+        tmp = fetch(FFMPEG_BUILDS + archive, dest_dir / archive, progress)
+        try:
+            verify(tmp, expected, "ffmpeg")
+            extract_members(tmp, wanted, dest_dir)
+        finally:
+            if tmp.exists():
+                tmp.unlink()
+    return install
 
 
 def mac_components():
@@ -421,13 +459,33 @@ def windows_components():
          "install": install_ytdlp("yt-dlp.exe", "yt-dlp.exe")},
         {"id": "deno", "label": "Deno", "desc": "runtime JavaScript richiesto da YouTube", "files": ["deno.exe"],
          "install": install_deno("x86_64-pc-windows-msvc")},
+        # build "shared": servono anche le DLL accanto agli eseguibili
         {"id": "ffmpeg", "label": "ffmpeg", "desc": "conversione audio e unione audio/video",
-         "files": ["ffmpeg.exe", "ffprobe.exe"], "install": install_ffmpeg_windows},
+         "files": ["ffmpeg.exe", "ffprobe.exe"],
+         "install": install_ffmpeg_builds(
+             FFMPEG_WIN_ZIP, lambda base: base in ("ffmpeg.exe", "ffprobe.exe") or base.endswith(".dll"))},
     ]
 
 
-COMPONENTS = windows_components() if IS_WIN else mac_components()
-SETUP_SIZE = "circa 160 MB da scaricare, 300 MB su disco" if IS_WIN else "circa 130 MB da scaricare, 270 MB su disco"
+def linux_components():
+    ytdlp, deno, ffmpeg = LINUX_ASSETS.get(platform.machine().lower(), LINUX_ASSETS["x86_64"])
+    return [
+        {"id": "yt-dlp", "label": "yt-dlp", "desc": "motore di download", "files": ["yt-dlp"],
+         "install": install_ytdlp(ytdlp, "yt-dlp")},
+        {"id": "deno", "label": "Deno", "desc": "runtime JavaScript richiesto da YouTube", "files": ["deno"],
+         "install": install_deno(deno)},
+        {"id": "ffmpeg", "label": "ffmpeg", "desc": "conversione audio e unione audio/video",
+         "files": ["ffmpeg", "ffprobe"],
+         "install": install_ffmpeg_builds(ffmpeg, lambda base: base in ("ffmpeg", "ffprobe"))},
+    ]
+
+
+if IS_WIN:
+    COMPONENTS, SETUP_SIZE = windows_components(), "circa 160 MB da scaricare, 300 MB su disco"
+elif IS_MAC:
+    COMPONENTS, SETUP_SIZE = mac_components(), "circa 130 MB da scaricare, 270 MB su disco"
+else:
+    COMPONENTS, SETUP_SIZE = linux_components(), "circa 240 MB da scaricare, 470 MB su disco"
 
 
 def component_installed(c):
@@ -452,8 +510,23 @@ def needs_rosetta():
         return True
 
 
+def setup_blocker():
+    """Il motivo per cui i componenti non si possono installare su questo computer, oppure None."""
+    if IS_LINUX and platform.machine().lower() not in LINUX_ASSETS:
+        return ("Trip YTD per Linux funziona su computer a 64 bit (x86_64 o ARM64), "
+                "questo è %s." % (platform.machine() or "sconosciuto"))
+    if needs_rosetta():
+        return ("ffmpeg per macOS richiede Rosetta 2. Apri il Terminale, esegui "
+                "«softwareupdate --install-rosetta» e poi riprova.")
+    return None
+
+
 # ---------------------------------------------------------------------------
-# Azioni sul sistema (Finder / Esplora file, browser, collegamenti)
+# Azioni sul sistema (Finder / Esplora file / file manager, browser, collegamenti)
+
+
+def xdg_open(target):
+    subprocess.Popen(["xdg-open", str(target)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def open_browser():
@@ -466,20 +539,37 @@ def open_browser():
 def open_folder(path):
     if IS_WIN:
         os.startfile(str(path))
-    else:
+    elif IS_MAC:
         subprocess.Popen(["/usr/bin/open", str(path)])
+    else:
+        xdg_open(path)
 
 
 def reveal_file(path):
     if IS_WIN:
         subprocess.Popen('explorer /select,"%s"' % path)
-    else:
+    elif IS_MAC:
         subprocess.Popen(["/usr/bin/open", "-R", path])
+    else:
+        # chiede al file manager (Nautilus, Dolphin, Nemo, Thunar…) di selezionare il file
+        try:
+            r = subprocess.run(
+                ["dbus-send", "--session", "--print-reply", "--dest=org.freedesktop.FileManager1",
+                 "--type=method_call", "/org/freedesktop/FileManager1", "org.freedesktop.FileManager1.ShowItems",
+                 "array:string:" + Path(path).as_uri(), "string:"],
+                capture_output=True, timeout=10)
+            if r.returncode == 0:
+                return
+        except (OSError, subprocess.SubprocessError):
+            pass
+        xdg_open(os.path.dirname(path))
 
 
 def play_file(path, video=False):
     if IS_WIN:
         os.startfile(path)
+    elif IS_LINUX:
+        xdg_open(path)
     elif video:
         # il lettore predefinito: QuickTime non riproduce VP9/AV1, VLC o IINA sì
         subprocess.Popen(["/usr/bin/open", path])
@@ -503,14 +593,65 @@ def choose_folder_dialog(start):
         ) % (ps_str(prompt), ps_str(start))
         r = run_powershell(script, timeout=None)
         chosen = r.stdout.decode("utf-8", "replace").strip().lstrip("﻿")
-    else:
+    elif IS_MAC:
         script = 'POSIX path of (choose folder with prompt "%s" default location (POSIX file "%s"))' % (
             prompt, str(start).replace("\\", "\\\\").replace('"', '\\"'))
         r = subprocess.run(["/usr/bin/osascript", "-e", "activate", "-e", script], capture_output=True, text=True)
         chosen = r.stdout.strip()
+    else:
+        if shutil.which("zenity"):
+            cmd = ["zenity", "--file-selection", "--directory", "--title", prompt, "--filename", str(start) + "/"]
+        elif shutil.which("kdialog"):
+            cmd = ["kdialog", "--getexistingdirectory", str(start), "--title", prompt]
+        else:
+            cmd = [sys.executable, "-c", TK_FOLDER_PICKER, prompt, str(start)]
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        chosen = r.stdout.strip()
+        if r.returncode != 0 and "tkinter" in r.stderr:
+            raise RuntimeError("Per scegliere la cartella installa zenity "
+                               "(per esempio: sudo apt install zenity) e riprova.")
     if r.returncode != 0 or not chosen:
         return None
     return chosen.rstrip("/\\") or chosen
+
+
+TK_FOLDER_PICKER = (
+    "import sys, tkinter, tkinter.filedialog as fd\n"
+    "root = tkinter.Tk(); root.withdraw()\n"
+    "print(fd.askdirectory(title=sys.argv[1], initialdir=sys.argv[2], mustexist=True) or '')\n"
+)
+
+
+def desktop_exec_arg(arg):
+    """Argomento tra virgolette per la chiave Exec di un file .desktop."""
+    quoted = '"%s"' % re.sub(r'([\\"`$])', r'\\\1', str(arg))
+    return quoted.replace("\\", "\\\\").replace("%", "%%")
+
+
+def create_linux_shortcut():
+    """Aggiunge «Trip YTD» al menu delle applicazioni."""
+    apps = XDG_DATA / "applications"
+    entry = "\n".join([
+        "[Desktop Entry]",
+        "Type=Application",
+        "Name=Trip YTD",
+        "Comment=Audio e video da YouTube",
+        "Exec=%s %s" % (desktop_exec_arg(sys.executable), desktop_exec_arg(HERE / "trip_ytd.py")),
+        "Icon=" + str(HERE / "icon.png").replace("\\", "\\\\"),
+        "Terminal=false",
+        "Categories=AudioVideo;Network;",
+        "Keywords=YouTube;MP3;WAV;video;download;",
+        "StartupNotify=false",
+        "",
+    ])
+    try:
+        apps.mkdir(parents=True, exist_ok=True)
+        tmp = apps / "trip-ytd.desktop.part"
+        tmp.write_text(entry, encoding="utf-8")
+        tmp.chmod(0o755)
+        tmp.replace(apps / "trip-ytd.desktop")
+    except OSError as e:
+        log.warning("voce del menu non creata: %s", e)
 
 
 def create_windows_shortcuts():
@@ -798,9 +939,9 @@ class TripYTD:
         try:
             BIN.mkdir(parents=True, exist_ok=True)
             WORK.mkdir(parents=True, exist_ok=True)
-            if needs_rosetta():
-                raise RuntimeError("ffmpeg per macOS richiede Rosetta 2. Apri il Terminale, esegui "
-                                   "«softwareupdate --install-rosetta» e poi riprova.")
+            blocker = setup_blocker()
+            if blocker:
+                raise RuntimeError(blocker)
             for c in COMPONENTS:
                 cid = c["id"]
                 if component_installed(c):
@@ -893,7 +1034,8 @@ class TripYTD:
             outdir.mkdir(parents=True, exist_ok=True)
         except PermissionError:
             where = ("nelle impostazioni di sicurezza di Windows" if IS_WIN else
-                     "in Impostazioni di Sistema › Privacy e sicurezza › File e cartelle")
+                     "in Impostazioni di Sistema › Privacy e sicurezza › File e cartelle" if IS_MAC else
+                     "modificando i permessi della cartella")
             raise ValueError("Trip YTD non può scrivere in %s. Scegli un'altra cartella o consenti l'accesso %s."
                              % (human_path(outdir), where))
         job = Job(url.strip(), vid, fmt, outdir)
@@ -923,7 +1065,7 @@ class TripYTD:
     def state(self):
         return {
             "app": {"name": APP_NAME, "version": VERSION},
-            "platform": "windows" if IS_WIN else "mac",
+            "platform": "windows" if IS_WIN else "mac" if IS_MAC else "linux",
             "setup": {
                 "installed": self.installed(),
                 "running": self.setup_running,
@@ -1017,7 +1159,11 @@ class Handler(BaseHTTPRequestHandler):
             app.update_engine()
             return self._send(200, {"ok": True})
         if self.path == "/api/outdir/choose":
-            return self._send(200, {"ok": app.choose_outdir(), "outdir": human_path(app.outdir)})
+            try:
+                ok = app.choose_outdir()
+            except RuntimeError as e:
+                return self._send(400, {"error": str(e)})
+            return self._send(200, {"ok": ok, "outdir": human_path(app.outdir)})
         if self.path == "/api/outdir/open":
             app.outdir.mkdir(parents=True, exist_ok=True)
             open_folder(app.outdir)
@@ -1055,20 +1201,24 @@ def main():
     ap = argparse.ArgumentParser(description="Trip YTD: audio (MP3 320k, WAV) e video da YouTube.")
     ap.add_argument("--no-browser", action="store_true", help="non aprire il browser all'avvio")
     ap.add_argument("--out", help="cartella di destinazione per questa sessione")
-    ap.add_argument("--shortcuts", action="store_true", help="Windows: crea i collegamenti su Desktop e menu Start")
+    ap.add_argument("--shortcuts", action="store_true",
+                    help="Windows: collegamenti su Desktop e menu Start; Linux: voce nel menu delle applicazioni")
     args = ap.parse_args()
 
     SUPPORT.mkdir(parents=True, exist_ok=True)
     if args.shortcuts and IS_WIN:
         threading.Thread(target=create_windows_shortcuts).start()
+    elif args.shortcuts and IS_LINUX:
+        create_linux_shortcut()
 
     if already_running():
         if not args.no_browser:
             open_browser()
         return
 
-    logging.basicConfig(filename=str(LOG_FILE), filemode="w", level=logging.INFO, encoding="utf-8",
-                        format="%(asctime)s %(levelname)s %(message)s")
+    # FileHandler invece di basicConfig(encoding=…), che richiede Python 3.9
+    logging.basicConfig(handlers=[logging.FileHandler(str(LOG_FILE), mode="w", encoding="utf-8")],
+                        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     shutil.rmtree(WORK, ignore_errors=True)  # residui di download interrotti
 
     app = TripYTD(args.out)

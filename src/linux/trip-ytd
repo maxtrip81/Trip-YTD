@@ -1,0 +1,15 @@
+#!/bin/sh
+# Trip YTD per Linux: avvia il server locale, apre la pagina nel browser
+# e aggiunge «Trip YTD» al menu delle applicazioni.
+DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+fail() {
+  echo "$1" >&2
+  command -v zenity >/dev/null 2>&1 && zenity --error --no-wrap --text="$1" >/dev/null 2>&1
+  exit 1
+}
+[ -f "$DIR/app/trip_ytd.py" ] || fail "Trip YTD non trova la cartella «app»: estrai TUTTO l'archivio e riprova."
+PY=$(command -v python3) || fail "Trip YTD richiede Python 3.8 o successivo: installalo dal gestore pacchetti (per esempio: sudo apt install python3)."
+"$PY" -c 'import sys; sys.exit(sys.version_info < (3, 8))' 2>/dev/null ||
+  fail "Trip YTD richiede Python 3.8 o successivo: questo è $("$PY" -V 2>&1)."
+nohup "$PY" "$DIR/app/trip_ytd.py" --shortcuts >/dev/null 2>&1 &
+echo "Trip YTD si apre nel browser. Da ora lo trovi anche nel menu delle applicazioni."
